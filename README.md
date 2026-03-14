@@ -1,14 +1,14 @@
 # detectQRCCCD
 
-Du an Python de detect va doc QR tren CCCD tu anh.
+Python project to detect and decode QR data on Vietnamese Citizen ID cards (CCCD) from images.
 
-## Yeu cau
+## Requirements
 
 - Python 3.9+
 - macOS/Linux shell (zsh, bash)
-- Da pin dependency `zxing-cpp<3` de tuong thich Python 3.9
+- Dependency is pinned to `zxing-cpp<3` for Python 3.9 compatibility
 
-## Cai dat
+## Installation
 
 ```bash
 python3 -m venv .venv
@@ -17,62 +17,62 @@ python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install -r requirements.txt
 ```
 
-## Cach chay
+## Run CLI
 
-Chay voi mot hoac nhieu file anh:
-
-```bash
-python3 main.py /duong-dan/toi/anh1.jpg /duong-dan/toi/anh2.heic
-```
-
-Chay voi thu muc anh:
+Run with one or more image files:
 
 ```bash
-python3 main.py /duong-dan/toi/thu-muc-anh
+python3 main.py /path/to/image1.jpg /path/to/image2.heic
 ```
 
-## Chay nhu service (de app khac goi)
+Run with a folder:
 
-Khoi dong API local:
+```bash
+python3 main.py /path/to/image-folder
+```
+
+## Run As A Service (for other apps)
+
+Start local API:
 
 ```bash
 source .venv/bin/activate
 python3 -m uvicorn service:app --host 0.0.0.0 --port 8000
 ```
 
-Kiem tra service:
+Health check:
 
 ```bash
 curl http://127.0.0.1:8000/health
 ```
 
-Goi API bang duong dan file local:
+Call API with local file path:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/decode/path \
-	-H "Content-Type: application/json" \
-	-d '{"image_path":"/Users/itcuong2011/MyData/detectQRCCCD/asset/IMG_4310.png"}'
+  -H "Content-Type: application/json" \
+  -d '{"image_path":"/Users/itcuong2011/MyData/detectQRCCCD/asset/IMG_4310.png"}'
 ```
 
-Goi API bang upload file:
+Call API by uploading file:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/decode/file \
-	-F "file=@/Users/itcuong2011/MyData/detectQRCCCD/asset/IMG_4310.png"
+  -F "file=@/Users/itcuong2011/MyData/detectQRCCCD/asset/IMG_4310.png"
 ```
 
-API tra JSON gom:
+API JSON response includes:
 
-- detected: true/false
-- region: vung crop detect thanh cong
-- variant: bien the xu ly anh detect thanh cong
-- raw_data: chuoi QR goc
-- fields: danh sach field tach bang dau `|`
-- mapped: object da gan nhan (So CCCD, Ho va ten, ...)
+- `detected`: true/false
+- `region`: successful crop region
+- `variant`: successful preprocessing variant
+- `raw_data`: raw QR text
+- `fields`: list split by `|`
+- `mapped`: labeled object (`So CCCD`, `Ho va ten`, etc.)
 
-## Chay bang Docker
+## Run With Docker
 
-### Cach 1: Docker CLI
+### Option 1: Docker CLI
 
 Build image:
 
@@ -86,52 +86,52 @@ Run container:
 docker run --rm -p 8000:8000 --name detectqrcccd-api detectqrcccd-api:latest
 ```
 
-Neu muon goi endpoint `/decode/path` voi anh local, mount thu muc anh vao container:
+If you want to use `/decode/path` with local images, mount a local folder into the container:
 
 ```bash
 docker run --rm -p 8000:8000 \
-	-v /Users/itcuong2011/MyData/detectQRCCCD/asset:/data:ro \
-	--name detectqrcccd-api \
-	detectqrcccd-api:latest
+  -v /Users/itcuong2011/MyData/detectQRCCCD/asset:/data:ro \
+  --name detectqrcccd-api \
+  detectqrcccd-api:latest
 ```
 
-Khi do goi API:
+Then call API:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/decode/path \
-	-H "Content-Type: application/json" \
-	-d '{"image_path":"/data/IMG_4310.png"}'
+  -H "Content-Type: application/json" \
+  -d '{"image_path":"/data/IMG_4310.png"}'
 ```
 
-### Cach 2: Docker Compose
+### Option 2: Docker Compose
 
-Build va chay:
+Build and run:
 
 ```bash
 docker compose up -d --build
 ```
 
-Xem log:
+View logs:
 
 ```bash
 docker compose logs -f
 ```
 
-Dung service:
+Stop service:
 
 ```bash
 docker compose down
 ```
 
-## Chuong trinh se tu dong
+## What The Program Does
 
-- deskew anh
-- tim cac vung co kha nang la QR
-- tao nhieu bien the xu ly anh
-- decode QR (bo qua barcode 1D)
-- parse thong tin CCCD tu du lieu QR
+- Deskews image automatically
+- Finds likely QR candidate regions
+- Generates multiple preprocessing variants
+- Decodes QR only (ignores 1D barcodes)
+- Parses CCCD data fields from QR text
 
-## Dinh dang anh ho tro
+## Supported Image Formats
 
 - jpg
 - jpeg
@@ -143,95 +143,95 @@ docker compose down
 - tiff
 - webp
 
-## Loi thuong gap
+## Common Issues
 
 1. `zsh: command not found: python`
 
-Dung `python3` thay vi `python`:
+Use `python3` instead of `python`:
 
 ```bash
-python3 main.py /duong-dan/toi/anh.png
+python3 main.py /path/to/image.png
 ```
 
 2. `ModuleNotFoundError: No module named 'cv2'`
 
-Ban chua cai dependency trong dung virtual environment. Chay lai:
+Dependencies are not installed in the active virtual environment. Run:
 
 ```bash
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
 
-3. Loi cai `zxing-cpp`
+3. `zxing-cpp` installation error
 
-Thu nang cap cong cu build va cai lai:
+Upgrade build tooling and install again:
 
 ```bash
 python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install "zxing-cpp<3"
 ```
 
-## Chay ngầm tren macOS bang launchd
+## Run In Background On macOS (launchd)
 
-1. Tao file `~/Library/LaunchAgents/com.detectqrcccd.api.plist` voi noi dung sau (doi lai `ProgramArguments` theo duong dan may ban):
+1. Create file `~/Library/LaunchAgents/com.detectqrcccd.api.plist` with the content below (adjust `ProgramArguments` paths for your machine):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-	<dict>
-		<key>Label</key>
-		<string>com.detectqrcccd.api</string>
+  <dict>
+    <key>Label</key>
+    <string>com.detectqrcccd.api</string>
 
-		<key>ProgramArguments</key>
-		<array>
-			<string>/Users/itcuong2011/MyData/detectQRCCCD/.venv/bin/python3</string>
-			<string>-m</string>
-			<string>uvicorn</string>
-			<string>service:app</string>
-			<string>--host</string>
-			<string>127.0.0.1</string>
-			<string>--port</string>
-			<string>8000</string>
-		</array>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/itcuong2011/MyData/detectQRCCCD/.venv/bin/python3</string>
+      <string>-m</string>
+      <string>uvicorn</string>
+      <string>service:app</string>
+      <string>--host</string>
+      <string>127.0.0.1</string>
+      <string>--port</string>
+      <string>8000</string>
+    </array>
 
-		<key>WorkingDirectory</key>
-		<string>/Users/itcuong2011/MyData/detectQRCCCD</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/itcuong2011/MyData/detectQRCCCD</string>
 
-		<key>RunAtLoad</key>
-		<true/>
-		<key>KeepAlive</key>
-		<true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
 
-		<key>StandardOutPath</key>
-		<string>/Users/itcuong2011/MyData/detectQRCCCD/service.log</string>
-		<key>StandardErrorPath</key>
-		<string>/Users/itcuong2011/MyData/detectQRCCCD/service.err.log</string>
-	</dict>
+    <key>StandardOutPath</key>
+    <string>/Users/itcuong2011/MyData/detectQRCCCD/service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/itcuong2011/MyData/detectQRCCCD/service.err.log</string>
+  </dict>
 </plist>
 ```
 
-2. Nap service:
+2. Load service:
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.detectqrcccd.api.plist
 ```
 
-3. Khoi dong lai service sau khi update code:
+3. Reload service after code updates:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.detectqrcccd.api.plist
 launchctl load ~/Library/LaunchAgents/com.detectqrcccd.api.plist
 ```
 
-4. Kiem tra log:
+4. Check logs:
 
 ```bash
 tail -f /Users/itcuong2011/MyData/detectQRCCCD/service.log
 tail -f /Users/itcuong2011/MyData/detectQRCCCD/service.err.log
 ```
 
-## Vi du nhanh
+## Quick Example
 
 ```bash
 cd /Users/itcuong2011/MyData/detectQRCCCD
