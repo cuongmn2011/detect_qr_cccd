@@ -1,0 +1,11 @@
+services:
+  detectqrcccd-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: detectqrcccd-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./asset:/app/asset:ro

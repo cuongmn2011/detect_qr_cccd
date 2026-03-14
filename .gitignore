@@ -1,0 +1,33 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+
+# Python cache/build
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+
+# Environments and local config
+.env
+.env.*
+
+# Logs and runtime files
+*.log
+service.log
+service.err.log
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Local data (avoid pushing personal images)
+asset/
