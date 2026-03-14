@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -9,18 +10,26 @@ import zxingcpp
 
 register_heif_opener()
 
-FIELD_NAMES = [
-    "So CCCD",
-    "So CMND cu",
-    "Ho va ten",
-    "Ngay sinh",
-    "Gioi tinh",
-    "Dia chi",
-    "Ngay cap",
+CCCD_FIELD_NAMES = [
+    "ID Number",
+    "Old ID Number",
+    "Full Name",
+    "Date of Birth",
+    "Sex",
+    "Address",
+    "Issue Date",
 ]
 
 
-def load_image(image_path: Path):
+def load_image(image_path: Path) -> np.ndarray:
+    """Load an image from disk and convert it to OpenCV BGR format.
+
+    Args:
+        image_path: Absolute or relative path to an image file.
+
+    Returns:
+        A NumPy ndarray in BGR channel order with shape (H, W, 3).
+    """
     pil_img = Image.open(image_path).convert("RGB")
     img = np.array(pil_img)
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -28,7 +37,18 @@ def load_image(image_path: Path):
     return img
 
 
-def deskew(img):
+def deskew(img: np.ndarray) -> np.ndarray:
+    """Estimate and correct image skew using dominant line orientation.
+
+    The function detects edges and line segments, computes the median angle of
+    near-horizontal lines, and rotates the image to reduce tilt.
+
+    Args:
+        img: Input image as a BGR ndarray.
+
+    Returns:
+        A deskewed BGR ndarray. If skew cannot be estimated, returns original image.
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150)
     lines = cv2.HoughLinesP(
@@ -56,7 +76,7 @@ def deskew(img):
     if abs(median_angle) < 0.5:
         return img
 
-    print(f"  -> Deskew rotate {median_angle:.2f} degrees")
+    print(f"  -> Deskew rotation: {median_angle:.2f} degrees")
     h, w = img.shape[:2]
     matrix = cv2.getRotationMatrix2D((w / 2, h / 2), median_angle, 1.0)
     deskewed = cv2.warpAffine(
@@ -69,9 +89,56 @@ def deskew(img):
     return deskewed
 
 
-def find_qr_candidates(img):
+def find_finder_patterns(binary_img: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Locate likely QR finder-pattern boxes from contour hierarchy.
+
+    The function scans contour tree depth to identify nested-square structures
+    that resemble QR finder patterns.
+
+    Args:
+        binary_img: Binary (thresholded) image used for contour extraction.
+
+    Returns:
+        A list of bounding boxes in (x, y, w, h) format.
+    """
+    contours, hierarchy = cv2.findContours(
+        binary_img,
+        cv2.RETR_TREE,
+        cv2.CHAIN_APPROX_SIMPLE,
+    )
+    if hierarchy is None:
+        return []
+
+    patterns = []
+    hierarchy = hierarchy[0]
+    for i, cnt in enumerate(contours):
+        child = hierarchy[i][2]
+        depth = 0
+        node = child
+        while node != -1:
+            depth += 1
+            node = hierarchy[node][2]
+        if depth == 2:
+            area = cv2.contourArea(cnt)
+            if area > 100:
+                patterns.append(cv2.boundingRect(cnt))
+    return patterns
+
+
+def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
+    """Generate candidate crop regions that may contain a QR code.
+
+    The function combines contour-based square detection, finder-pattern based
+    region proposal, and coarse grid splitting to maximize detection recall.
+
+    Args:
+        img: Input image as a BGR ndarray.
+
+    Returns:
+        A dictionary mapping region names to cropped image ndarrays.
+    """
     h, w = img.shape[:2]
-    crops = {}
+    crops: dict[str, np.ndarray] = {}
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (9, 9), 0)
@@ -114,30 +181,6 @@ def find_qr_candidates(img):
                     key = f"contour_{block_size}_{x}_{y}"
                     crops[key] = img[y1:y2, x1:x2]
 
-    def find_finder_patterns(binary_img):
-        contours, hierarchy = cv2.findContours(
-            binary_img,
-            cv2.RETR_TREE,
-            cv2.CHAIN_APPROX_SIMPLE,
-        )
-        if hierarchy is None:
-            return []
-
-        patterns = []
-        hierarchy = hierarchy[0]
-        for i, cnt in enumerate(contours):
-            child = hierarchy[i][2]
-            depth = 0
-            node = child
-            while node != -1:
-                depth += 1
-                node = hierarchy[node][2]
-            if depth == 2:
-                area = cv2.contourArea(cnt)
-                if area > 100:
-                    patterns.append(cv2.boundingRect(cnt))
-        return patterns
-
     for block_size in [11, 21]:
         binary = cv2.adaptiveThreshold(
             blurred,
@@ -160,7 +203,7 @@ def find_qr_candidates(img):
             x2 = min(w, x2 + pw)
             y2 = min(h, y2 + ph)
             crops[f"finder_pattern_{block_size}"] = img[y1:y2, x1:x2]
-            print(f"  -> Finder pattern area: ({x1},{y1}) -> ({x2},{y2})")
+            print(f"  -> Finder-pattern region: ({x1},{y1}) -> ({x2},{y2})")
 
     for row in range(3):
         for col in range(3):
@@ -175,7 +218,19 @@ def find_qr_candidates(img):
     return crops
 
 
-def preprocess_variants(img):
+def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
+    """Create multiple preprocessing variants to improve QR decoding.
+
+    The function generates grayscale, contrast-enhanced, sharpened, denoised,
+    thresholded, and upscaled versions of the same input image.
+
+    Args:
+        img: Input image as grayscale or BGR ndarray.
+
+    Returns:
+        A dictionary where each key is a preprocessing name and each value is
+        the corresponding transformed ndarray.
+    """
     if len(img.shape) == 2:
         gray = img
     else:
@@ -198,16 +253,38 @@ def preprocess_variants(img):
     }
 
 
-def try_decode_qr_only(img):
+def try_decode_qr_only(img: np.ndarray) -> list[Any]:
+    """Decode barcodes from an image and keep only QR results.
+
+    Args:
+        img: Input image ndarray accepted by zxingcpp.
+
+    Returns:
+        A list of decoded barcode objects filtered to QR format only.
+    """
     results = zxingcpp.read_barcodes(img)
     return [r for r in results if "QR" in str(r.format)]
 
 
-def parse_cccd_fields(raw_data: str):
+def parse_cccd_fields(raw_data: str) -> dict[str, Any]:
+    """Parse raw CCCD QR text into structured fields.
+
+    The function splits the payload by pipe separator and maps each position to
+    a human-readable field name.
+
+    Args:
+        raw_data: Raw QR payload string, typically pipe-separated.
+
+    Returns:
+        A dictionary containing:
+        - raw_data: original payload string
+        - fields: list of split field values
+        - mapped: dictionary of field label to value
+    """
     fields = raw_data.strip().split("|")
-    mapped = {}
+    mapped: dict[str, str] = {}
     for i, value in enumerate(fields):
-        label = FIELD_NAMES[i] if i < len(FIELD_NAMES) else f"Truong {i + 1}"
+        label = CCCD_FIELD_NAMES[i] if i < len(CCCD_FIELD_NAMES) else f"Field {i + 1}"
         mapped[label] = value
     return {
         "raw_data": raw_data,
@@ -216,7 +293,15 @@ def parse_cccd_fields(raw_data: str):
     }
 
 
-def parse_cccd_qr(raw_data: str):
+def print_cccd_qr_data(raw_data: str) -> None:
+    """Print parsed CCCD fields in a readable terminal layout.
+
+    Args:
+        raw_data: Raw QR payload string.
+
+    Returns:
+        None. Output is written to stdout.
+    """
     parsed = parse_cccd_fields(raw_data)
     print("\nCCCD data:")
     print("-" * 40)
@@ -225,7 +310,24 @@ def parse_cccd_qr(raw_data: str):
     print("-" * 40)
 
 
-def detect_cccd_from_image(img):
+def detect_cccd_from_image(img: np.ndarray) -> dict[str, Any]:
+    """Detect and decode CCCD QR data from a single image.
+
+    The function runs deskew, candidate extraction, preprocessing expansion, and
+    QR decoding. It returns immediately on the first successful decode.
+
+    Args:
+        img: Input image as a BGR ndarray.
+
+    Returns:
+        A dictionary with detection status and decoded content:
+        - detected: whether a QR code was decoded
+        - region: candidate region name used for successful decode
+        - variant: preprocessing variant name used for successful decode
+        - raw_data: original decoded payload string or None
+        - fields: list of parsed values
+        - mapped: labeled field dictionary
+    """
     img = deskew(img)
     crops = find_qr_candidates(img)
 
@@ -257,7 +359,18 @@ def detect_cccd_from_image(img):
     }
 
 
-def read_qr_from_cccd(image_path: Path):
+def read_qr_from_cccd(image_path: Path) -> bool:
+    """Run full CCCD QR decoding pipeline for one image path.
+
+    The function loads the image, executes detection, prints details, and
+    reports success/failure for batch processing.
+
+    Args:
+        image_path: Path to an input image file.
+
+    Returns:
+        True if a QR code is successfully decoded; otherwise False.
+    """
     try:
         img = load_image(image_path)
     except Exception as exc:
@@ -275,7 +388,7 @@ def read_qr_from_cccd(image_path: Path):
             f"(region={result['region']}, variant={result['variant']})"
         )
         print(f"\nRaw data: {result['raw_data']}")
-        parse_cccd_qr(result["raw_data"])
+        print_cccd_qr_data(result["raw_data"])
         return True
 
     print("\n[FAILED] QR code not found.")
@@ -283,9 +396,17 @@ def read_qr_from_cccd(image_path: Path):
     return False
 
 
-def gather_image_paths(inputs):
+def gather_image_paths(inputs: list[str]) -> list[Path]:
+    """Collect supported image files from input files and directories.
+
+    Args:
+        inputs: List of file or directory paths provided by CLI.
+
+    Returns:
+        A list of resolved image file paths with supported extensions.
+    """
     exts = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".webp"}
-    paths = []
+    paths: list[Path] = []
     for raw in inputs:
         p = Path(raw).expanduser().resolve()
         if p.is_file() and p.suffix.lower() in exts:
@@ -297,7 +418,18 @@ def gather_image_paths(inputs):
     return paths
 
 
-def main():
+def main() -> int:
+    """Execute CLI flow for detecting CCCD QR data from images.
+
+    The function parses command-line arguments, expands input paths, processes
+    each image, and prints a final success summary.
+
+    Args:
+        None.
+
+    Returns:
+        Process exit code (0 for normal execution, 1 when no valid input files).
+    """
     parser = argparse.ArgumentParser(
         description="Detect and decode CCCD QR from images (supports HEIC/HEIF).",
     )

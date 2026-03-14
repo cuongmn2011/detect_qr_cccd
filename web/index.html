@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCCD QR Scanner</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --ink: #1a2433;
+      --muted: #637086;
+      --brand: #0f62fe;
+      --ok: #0f9d58;
+      --err: #d93025;
+      --line: #d9e2ef;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at 10% 10%, #e8f0ff, var(--bg) 50%);
+      color: var(--ink);
+    }
+
+    .wrap {
+      width: min(980px, 94vw);
+      margin: 14px auto 22px;
+      display: grid;
+      gap: 18px;
+    }
+
+    @media (min-width: 760px) {
+      .wrap {
+        width: min(980px, 92vw);
+        margin: 30px auto;
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 8px 20px rgba(21, 38, 71, 0.06);
+    }
+
+    @media (min-width: 760px) {
+      .card { padding: 18px; }
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    @media (min-width: 760px) {
+      h1 { font-size: 24px; }
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+
+    .file-panel {
+      display: grid;
+      gap: 10px;
+    }
+
+    input[type="file"] {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+      width: 100%;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 600;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .ghost-btn {
+      background: #eaf1ff;
+      color: #19407a;
+      border: 1px solid #cdddf8;
+    }
+
+    .ghost-btn.copied {
+      background: #e9f8ee;
+      color: #12613a;
+      border: 1px solid #bde7cd;
+    }
+
+    .ghost-btn.copy-failed {
+      background: #fdeeee;
+      color: #8b1d16;
+      border: 1px solid #f2c4c1;
+    }
+
+    .camera-mini {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #f9fbff;
+      display: grid;
+      gap: 8px;
+    }
+
+    .camera-mini-title {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .camera-view {
+      width: 100%;
+      min-height: clamp(180px, 40vw, 320px);
+      background: #101b30;
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #b9c8e5;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .camera-view video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .camera-actions {
+      display: grid;
+      gap: 6px;
+      width: 100%;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .camera-actions button {
+      padding: 9px 6px;
+      font-size: 13px;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 13px;
+      min-height: 22px;
+      color: var(--muted);
+    }
+
+    @media (min-width: 760px) {
+      .status { font-size: 14px; }
+    }
+
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 1fr;
+    }
+
+    .grid > * { min-width: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    @media (min-width: 760px) {
+      table { font-size: 14px; }
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 8px;
+      vertical-align: top;
+    }
+
+    th {
+      width: 42%;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    @media (min-width: 760px) {
+      th { width: 35%; }
+    }
+
+    .image-box {
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      min-height: clamp(220px, 46vh, 380px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #fbfdff;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      padding: 10px;
+    }
+
+    .image-box img {
+      max-width: 100%;
+      max-height: clamp(200px, 44vh, 360px);
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      border-radius: 8px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    pre {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0b1324;
+      color: #d9e7ff;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 52vh;
+      padding: 12px;
+    }
+
+    @media (min-width: 760px) {
+      pre {
+        font-size: 13px;
+        max-height: 460px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>CCCD QR Scanner</h1>
+      <p>Upload or capture a CCCD image to extract and decode its QR data.</p>
+
+      <div class="actions">
+        <div class="file-panel">
+          <input id="fileInput" type="file" accept="image/*" />
+          <button id="decodeBtn" type="button">Decode Image</button>
+        </div>
+
+        <div class="camera-mini">
+          <div class="camera-mini-title">Quick Camera</div>
+          <div id="cameraView" class="camera-view">
+            <video id="cameraVideo" autoplay playsinline></video>
+            <span id="cameraPlaceholder">Preview</span>
+          </div>
+          <div class="camera-actions">
+            <button id="startCamBtn" type="button">Start</button>
+            <button id="captureBtn" type="button" disabled>Capture</button>
+            <button id="stopCamBtn" type="button" disabled>Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="status" class="status">Ready.</div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h1 style="font-size: 18px; margin-bottom: 12px;">Detection Result</h1>
+
+        <h1 style="font-size: 16px; margin-bottom: 10px;">Mapped Fields</h1>
+        <table>
+          <tbody id="mappedBody">
+            <tr><td colspan="2" style="color: var(--muted);">No result yet.</td></tr>
+          </tbody>
+        </table>
+
+        <h1 style="font-size: 16px; margin: 14px 0 10px;">Current Detect Image</h1>
+        <div id="imageBox" class="image-box">No image selected.</div>
+      </article>
+
+      <article class="card">
+        <div class="section-head">
+          <h1 style="font-size: 18px; margin: 0;">Raw JSON</h1>
+          <button id="copyJsonBtn" class="ghost-btn" type="button">Copy JSON</button>
+        </div>
+        <pre id="jsonOutput">{}</pre>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const decodeBtn = document.getElementById("decodeBtn");
+    const startCamBtn = document.getElementById("startCamBtn");
+    const captureBtn = document.getElementById("captureBtn");
+    const stopCamBtn = document.getElementById("stopCamBtn");
+    const cameraVideo = document.getElementById("cameraVideo");
+    const cameraPlaceholder = document.getElementById("cameraPlaceholder");
+    const statusEl = document.getElementById("status");
+    const jsonOutput = document.getElementById("jsonOutput");
+    const copyJsonBtn = document.getElementById("copyJsonBtn");
+    const mappedBody = document.getElementById("mappedBody");
+    const imageBox = document.getElementById("imageBox");
+
+    let cameraStream = null;
+    let capturedFile = null;
+    let copyBtnTimer = null;
+
+    function setStatus(text, mode = "") {
+      statusEl.textContent = text;
+      statusEl.className = `status ${mode}`.trim();
+    }
+
+    function renderMapped(mapped) {
+      const entries = Object.entries(mapped || {});
+      if (entries.length === 0) {
+        mappedBody.innerHTML = '<tr><td colspan="2" style="color: var(--muted);">No mapped fields.</td></tr>';
+        return;
+      }
+
+      mappedBody.innerHTML = entries
+        .map(([key, value]) => `<tr><th>${key}</th><td>${value || ""}</td></tr>`)
+        .join("");
+    }
+
+    function renderCurrentImage(url) {
+      if (!url) {
+        imageBox.textContent = "No image selected.";
+        return;
+      }
+      imageBox.innerHTML = `<img src="${url}" alt="Current detect image" />`;
+    }
+
+    function clearCurrentResult() {
+      renderMapped({});
+      renderCurrentImage("");
+      jsonOutput.textContent = "{}";
+      setStatus("Ready.");
+    }
+
+    function updateCameraUi(hasStream) {
+      captureBtn.disabled = !hasStream;
+      stopCamBtn.disabled = !hasStream;
+      startCamBtn.disabled = hasStream;
+      cameraVideo.style.display = hasStream ? "block" : "none";
+      cameraPlaceholder.style.display = hasStream ? "none" : "inline";
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+      }
+      cameraVideo.srcObject = null;
+      updateCameraUi(false);
+    }
+
+    async function startCamera() {
+      try {
+        stopCamera();
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+        cameraVideo.srcObject = cameraStream;
+        updateCameraUi(true);
+        setStatus("Camera is ready. Click Capture.");
+      } catch (error) {
+        stopCamera();
+        setStatus(`Cannot open camera: ${String(error)}`, "err");
+      }
+    }
+
+    async function capturePhoto() {
+      if (!cameraStream) {
+        setStatus("Please start camera first.", "err");
+        return;
+      }
+
+      const width = cameraVideo.videoWidth;
+      const height = cameraVideo.videoHeight;
+      if (!width || !height) {
+        setStatus("Camera stream is not ready yet.", "err");
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setStatus("Cannot capture photo from camera.", "err");
+        return;
+      }
+      ctx.drawImage(cameraVideo, 0, 0, width, height);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+      if (!blob) {
+        setStatus("Cannot capture photo from camera.", "err");
+        return;
+      }
+
+      capturedFile = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+      fileInput.value = "";
+      clearCurrentResult();
+      setStatus("Photo captured. Click Decode Image.", "ok");
+    }
+
+    async function decodeImage() {
+      const file = capturedFile || (fileInput.files && fileInput.files[0]);
+      if (!file) {
+        setStatus("Please choose a file or capture a photo first.", "err");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      decodeBtn.disabled = true;
+      clearCurrentResult();
+      setStatus("Uploading and decoding image...", "");
+
+      try {
+        const response = await fetch("/decode/file", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+        jsonOutput.textContent = JSON.stringify(data, null, 2);
+
+        if (!response.ok) {
+          renderMapped({});
+          renderCurrentImage("");
+          setStatus(`Request failed: ${data.detail || response.statusText}`, "err");
+          return;
+        }
+
+        renderMapped(data.mapped || {});
+        renderCurrentImage(data.current_image_url || "");
+        if (data.detected) {
+          setStatus("Decode successful.", "ok");
+        } else {
+          setStatus("No QR detected in this image.", "err");
+        }
+      } catch (error) {
+        renderMapped({});
+        renderCurrentImage("");
+        jsonOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
+        setStatus("Cannot connect to API service.", "err");
+      } finally {
+        decodeBtn.disabled = false;
+      }
+    }
+
+    async function copyRawJson() {
+      const content = jsonOutput.textContent || "{}";
+      try {
+        await navigator.clipboard.writeText(content);
+        if (copyBtnTimer) {
+          clearTimeout(copyBtnTimer);
+        }
+        copyJsonBtn.textContent = "Copied!";
+        copyJsonBtn.classList.remove("copy-failed");
+        copyJsonBtn.classList.add("copied");
+        copyBtnTimer = setTimeout(() => {
+          copyJsonBtn.textContent = "Copy JSON";
+          copyJsonBtn.classList.remove("copied");
+        }, 1800);
+        setStatus("Raw JSON copied to clipboard.", "ok");
+      } catch (error) {
+        if (copyBtnTimer) {
+          clearTimeout(copyBtnTimer);
+        }
+        copyJsonBtn.textContent = "Copy Failed";
+        copyJsonBtn.classList.remove("copied");
+        copyJsonBtn.classList.add("copy-failed");
+        copyBtnTimer = setTimeout(() => {
+          copyJsonBtn.textContent = "Copy JSON";
+          copyJsonBtn.classList.remove("copy-failed");
+        }, 2200);
+        setStatus("Cannot copy JSON automatically. Please copy manually.", "err");
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      capturedFile = null;
+      clearCurrentResult();
+    });
+    startCamBtn.addEventListener("click", startCamera);
+    captureBtn.addEventListener("click", capturePhoto);
+    stopCamBtn.addEventListener("click", () => {
+      stopCamera();
+      setStatus("Camera stopped.");
+    });
+    window.addEventListener("beforeunload", stopCamera);
+    updateCameraUi(false);
+    decodeBtn.addEventListener("click", decodeImage);
+    copyJsonBtn.addEventListener("click", copyRawJson);
+  </script>
+</body>
+</html>
