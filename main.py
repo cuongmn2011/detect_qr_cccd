@@ -4,7 +4,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 import zxingcpp
 
@@ -24,6 +24,8 @@ CCCD_FIELD_NAMES = [
 def load_image(image_path: Path) -> np.ndarray:
     """Load an image from disk and convert it to OpenCV BGR format.
 
+    Handles EXIF rotation metadata for images from phones.
+
     Args:
         image_path: Absolute or relative path to an image file.
 
@@ -31,6 +33,7 @@ def load_image(image_path: Path) -> np.ndarray:
         A NumPy ndarray in BGR channel order with shape (H, W, 3).
     """
     pil_img = Image.open(image_path).convert("RGB")
+    pil_img = ImageOps.exif_transpose(pil_img)
     img = np.array(pil_img)
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     print(f"[OK] Loaded image: {image_path} | shape={img.shape}")
@@ -38,10 +41,10 @@ def load_image(image_path: Path) -> np.ndarray:
 
 
 def deskew(img: np.ndarray) -> np.ndarray:
-    """Estimate and correct image skew using dominant line orientation.
+    """Estimate and correct image skew using two strategies.
 
-    The function detects edges and line segments, computes the median angle of
-    near-horizontal lines, and rotates the image to reduce tilt.
+    Strategy 1: Hough line detection (handles general skew).
+    Strategy 2: Contour orientation (fallback for extreme angles > 45°).
 
     Args:
         img: Input image as a BGR ndarray.
@@ -50,6 +53,8 @@ def deskew(img: np.ndarray) -> np.ndarray:
         A deskewed BGR ndarray. If skew cannot be estimated, returns original image.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = img.shape[:2]
+
     edges = cv2.Canny(gray, 50, 150)
     lines = cv2.HoughLinesP(
         edges,
@@ -59,25 +64,37 @@ def deskew(img: np.ndarray) -> np.ndarray:
         minLineLength=100,
         maxLineGap=10,
     )
-    if lines is None:
-        return img
 
-    angles = []
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-        if -45 < angle < 45:
-            angles.append(angle)
+    median_angle = None
+    if lines is not None:
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            if -45 < angle < 45:
+                angles.append(angle)
 
-    if not angles:
-        return img
+        if angles and abs(np.median(angles)) > 0.5:
+            median_angle = float(np.median(angles))
 
-    median_angle = float(np.median(angles))
-    if abs(median_angle) < 0.5:
+    if median_angle is None:
+        blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+        binary = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 2
+        )
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if contours:
+            largest_cnt = max(contours, key=cv2.contourArea)
+            rect = cv2.minAreaRect(largest_cnt)
+            angle = rect[2]
+            if abs(angle) > 0.5 and abs(angle) < 45:
+                median_angle = float(angle)
+
+    if median_angle is None or abs(median_angle) < 0.5:
         return img
 
     print(f"  -> Deskew rotation: {median_angle:.2f} degrees")
-    h, w = img.shape[:2]
     matrix = cv2.getRotationMatrix2D((w / 2, h / 2), median_angle, 1.0)
     deskewed = cv2.warpAffine(
         img,
@@ -221,8 +238,7 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
 def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
     """Create multiple preprocessing variants to improve QR decoding.
 
-    The function generates grayscale, contrast-enhanced, sharpened, denoised,
-    thresholded, and upscaled versions of the same input image.
+    Includes standard variants, glare handling, and upscaling for robustness.
 
     Args:
         img: Input image as grayscale or BGR ndarray.
@@ -238,6 +254,8 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
 
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
+    clahe_aggressive = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(4, 4))
+    enhanced_aggressive = clahe_aggressive.apply(gray)
     sharp_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
     h, w = gray.shape
 
@@ -248,6 +266,9 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
         "sharpened": cv2.filter2D(enhanced, -1, sharp_kernel),
         "otsu": cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
         "denoise": cv2.fastNlMeansDenoising(gray, h=10),
+        "bilateral": cv2.bilateralFilter(gray, 9, 75, 75),
+        "clahe_aggressive": enhanced_aggressive,
+        "median": cv2.medianBlur(gray, 5),
         "resize_2x": cv2.resize(enhanced, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC),
         "resize_3x": cv2.resize(enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC),
     }

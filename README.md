@@ -4,6 +4,28 @@ Service nhận ảnh CCCD và giải mã dữ liệu QR code.
 
 ## Build Và Chạy Bằng Docker Compose
 
+Bạn có thể tùy biến domain và port bằng biến môi trường:
+
+```bash
+set APP_DOMAIN=cccd.local
+set HOST_PORT=8088
+set APP_HOST=0.0.0.0
+set APP_PORT=8000
+```
+
+Hoặc copy từ file mẫu:
+
+```bash
+copy .env.example .env
+```
+
+Nếu không set, mặc định sẽ là:
+
+- `APP_DOMAIN=localhost`
+- `HOST_PORT=8000`
+- `APP_HOST=0.0.0.0`
+- `APP_PORT=8000`
+
 ### 1. Build và chạy service
 
 ```bash
@@ -13,13 +35,13 @@ docker compose up -d --build
 ### 2. Health check
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://%APP_DOMAIN%:%HOST_PORT%/health
 ```
 
 ### 3. Gọi API bằng upload file
 
 ```bash
-curl -X POST http://127.0.0.1:8000/decode/file \
+curl -X POST http://%APP_DOMAIN%:%HOST_PORT%/decode/file \
   -F "file=@/path/to/cccd-image.png"
 ```
 
@@ -28,7 +50,7 @@ curl -X POST http://127.0.0.1:8000/decode/file \
 Sau khi service chạy, mở trình duyệt tại:
 
 ```text
-http://127.0.0.1:8000/
+http://<APP_DOMAIN>:<HOST_PORT>/
 ```
 
 Tại đây bạn có thể chọn ảnh, bấm Decode Image, và xem:
@@ -53,9 +75,39 @@ Theo file compose hiện tại, thư mục `./asset` được mount vào `/app/a
 Gọi endpoint `/decode/path` với đường dẫn trong container:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/decode/path \
+curl -X POST http://%APP_DOMAIN%:%HOST_PORT%/decode/path \
   -H "Content-Type: application/json" \
    -d '{"image_path":"/app/asset/IMG_4310.png"}'
+```
+
+## Đổi Domain Local (Windows)
+
+Nếu bạn muốn truy cập bằng domain riêng thay vì `127.0.0.1`:
+
+1. Mở file `C:\Windows\System32\drivers\etc\hosts` bằng quyền Administrator.
+2. Thêm một dòng, ví dụ:
+
+```text
+127.0.0.1 cccd.local
+```
+
+3. Mở terminal mới và set biến:
+
+```bash
+set APP_DOMAIN=cccd.local
+set HOST_PORT=8088
+```
+
+4. Chạy lại:
+
+```bash
+docker compose up -d --build
+```
+
+5. Truy cập:
+
+```text
+http://cccd.local:8088/
 ```
 
 ### 5. Xem logs
