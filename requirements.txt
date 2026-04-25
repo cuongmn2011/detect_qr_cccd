@@ -1,5 +1,5 @@
 numpy
-opencv-python
+opencv-contrib-python>=4.5.0
 Pillow
 pillow-heif
 zxing-cpp<3

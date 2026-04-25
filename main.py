@@ -10,6 +10,14 @@ import zxingcpp
 
 register_heif_opener()
 
+# Initialize WeChat QRCode detector (Deep Learning based)
+try:
+    detector = cv2.wechat_qrcode.WeChatQRCode()
+    WECHAT_AVAILABLE = True
+except (AttributeError, cv2.error):
+    detector = None
+    WECHAT_AVAILABLE = False
+
 CCCD_FIELD_NAMES = [
     "ID Number",
     "Old ID Number",
@@ -106,6 +114,128 @@ def deskew(img: np.ndarray) -> np.ndarray:
     return deskewed
 
 
+def perspective_correct(img: np.ndarray) -> np.ndarray:
+    """Correct perspective distortion in QR code regions using contour detection.
+
+    For regions that appear distorted (perspective skew), this attempts to detect
+    the bounding quadrilateral and warp it to a standard rectangular form.
+
+    Args:
+        img: Input image as a BGR or grayscale ndarray.
+
+    Returns:
+        Perspective-corrected image, or original if correction not applicable.
+    """
+    if len(img.shape) == 3:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img.copy()
+
+    h, w = gray.shape
+
+    # Find contours in the image
+    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+    binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 2)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Look for large quadrilateral contours
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < (min(h, w) * 0.1) ** 2:
+            continue
+
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+
+        # If we find a quadrilateral, try to warp it
+        if len(approx) == 4:
+            src_points = np.float32(approx.reshape(4, 2))
+
+            # Estimate target size based on contour
+            rect = cv2.boundingRect(cnt)
+            x, y, bw, bh = rect
+            side = max(bw, bh)
+            dst_size = max(200, side)
+
+            dst_points = np.float32([
+                [0, 0],
+                [dst_size, 0],
+                [dst_size, dst_size],
+                [0, dst_size],
+            ])
+
+            # Apply perspective warp
+            matrix = cv2.getPerspectiveTransform(src_points, dst_points)
+            warped = cv2.warpPerspective(
+                img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR),
+                matrix,
+                (dst_size, dst_size),
+                flags=cv2.INTER_CUBIC,
+                borderMode=cv2.BORDER_REPLICATE,
+            )
+            return warped
+
+    # No quadrilateral found, return original
+    return img
+
+
+def extract_qr_focused_regions(img: np.ndarray) -> dict[str, np.ndarray]:
+    """Extract QR code area separately from background.
+
+    Key insight: When sharpening entire image, background patterns also
+    get enhanced, causing decoder confusion. Solution: Extract QR area
+    only and preprocess that, excluding background.
+
+    Args:
+        img: Input BGR image
+
+    Returns:
+        Dictionary with QR-focused candidate regions
+    """
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+
+    crops = {}
+
+    for block_size in [11, 21]:
+        binary = cv2.adaptiveThreshold(
+            blurred,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            block_size,
+            2,
+        )
+
+        patterns = find_finder_patterns(binary)
+        if len(patterns) >= 3:
+            all_x = [p[0] for p in patterns] + [p[0] + p[2] for p in patterns]
+            all_y = [p[1] for p in patterns] + [p[1] + p[3] for p in patterns]
+
+            if all_x and all_y:
+                x1, y1 = min(all_x), min(all_y)
+                x2, y2 = max(all_x), max(all_y)
+
+                qr_h, qr_w = y2 - y1, x2 - x1
+
+                pad_x = int(qr_w * 0.15)
+                pad_y = int(qr_h * 0.15)
+
+                x1 = max(0, x1 - pad_x)
+                y1 = max(0, y1 - pad_y)
+                x2 = min(w, x2 + pad_x)
+                y2 = min(h, y2 + pad_y)
+
+                qr_region = img[y1:y2, x1:x2]
+                crops[f"qr_focused_{block_size}"] = qr_region
+
+    return crops
+
+
 def find_finder_patterns(binary_img: np.ndarray) -> list[tuple[int, int, int, int]]:
     """Locate likely QR finder-pattern boxes from contour hierarchy.
 
@@ -190,13 +320,14 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
                 x, y, bw, bh = cv2.boundingRect(approx)
                 ratio = bw / bh
                 if 0.65 < ratio < 1.35:
-                    pad = int(max(bw, bh) * 0.15)
-                    x1 = max(0, x - pad)
-                    y1 = max(0, y - pad)
-                    x2 = min(w, x + bw + pad)
-                    y2 = min(h, y + bh + pad)
-                    key = f"contour_{block_size}_{x}_{y}"
-                    crops[key] = img[y1:y2, x1:x2]
+                    for pad_factor in [0.25, 0.5]:
+                        pad = int(max(bw, bh) * pad_factor)
+                        x1 = max(0, x - pad)
+                        y1 = max(0, y - pad)
+                        x2 = min(w, x + bw + pad)
+                        y2 = min(h, y + bh + pad)
+                        key = f"contour_{block_size}_{x}_{y}_pad{int(pad_factor*100)}"
+                        crops[key] = img[y1:y2, x1:x2]
 
     for block_size in [11, 21]:
         binary = cv2.adaptiveThreshold(
@@ -230,15 +361,77 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
             x2 = int(w * (col + 1) / 3)
             crops[f"grid_{row}_{col}"] = img[y1:y2, x1:x2]
 
+    qr_focused = extract_qr_focused_regions(img)
+    crops.update(qr_focused)
+
     crops["full"] = img
+    crops["full_right"] = img[:, w // 2 :]
+    crops["full_bottom"] = img[h // 2 :, :]
+    crops["full_bottom_right"] = img[h // 2 :, w // 2 :]
+
+    # Add perspective-corrected variants for distorted/rotated regions
+    crops["full_perspective"] = perspective_correct(img)
+
     print(f"  -> Total candidate regions: {len(crops)}")
     return crops
+
+
+def preprocess_qr_focused(img: np.ndarray) -> dict[str, np.ndarray]:
+    """Aggressive preprocessing for QR area + background removal.
+
+    Key insight from user: When sharpening/contrasting, background text
+    also gets enhanced, confusing decoder. Solution: Remove background
+    using morphological operations, keep only QR pattern.
+
+    Args:
+        img: QR-focused region as BGR ndarray
+
+    Returns:
+        Dictionary of QR-optimized variants
+    """
+    if len(img.shape) == 2:
+        gray = img
+    else:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    h, w = gray.shape
+
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+
+    otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+    kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    kernel_large = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+
+    eroded = cv2.erode(otsu, kernel_small, iterations=1)
+    dilated = cv2.dilate(eroded, kernel_small, iterations=2)
+
+    inverted = cv2.bitwise_not(otsu)
+    inv_eroded = cv2.erode(inverted, kernel_small, iterations=1)
+    inv_dilated = cv2.dilate(inv_eroded, kernel_small, iterations=2)
+
+    open_morph = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, kernel_small)
+    close_morph = cv2.morphologyEx(otsu, cv2.MORPH_CLOSE, kernel_large)
+
+    return {
+        "qr_otsu": otsu,
+        "qr_erode_dilate": dilated,
+        "qr_inv_erode_dilate": inv_dilated,
+        "qr_open": open_morph,
+        "qr_close": close_morph,
+        "qr_resize_2x_otsu": cv2.resize(otsu, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC),
+        "qr_resize_3x_otsu": cv2.resize(otsu, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC),
+        "qr_resize_3x_erode": cv2.resize(dilated, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC),
+        "qr_resize_3x_close": cv2.resize(close_morph, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC),
+    }
 
 
 def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
     """Create multiple preprocessing variants to improve QR decoding.
 
-    Includes standard variants, glare handling, and upscaling for robustness.
+    Optimized variants prioritizing upscaling (which improves zxingcpp decoding)
+    and aggressive thresholding for rotation/glare handling.
 
     Args:
         img: Input image as grayscale or BGR ndarray.
@@ -252,25 +445,57 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
     else:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    h, w = gray.shape
+
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     clahe_aggressive = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(4, 4))
     enhanced_aggressive = clahe_aggressive.apply(gray)
+    clahe_extreme = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(2, 2))
+    enhanced_extreme = clahe_extreme.apply(gray)
+
+    otsu_enhanced = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    otsu_aggressive = cv2.threshold(enhanced_aggressive, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    otsu_extreme = cv2.threshold(enhanced_extreme, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
     sharp_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    h, w = gray.shape
+    kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+
+    upscale_2x_otsu = cv2.resize(otsu_enhanced, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    upscale_2x_otsu_aggressive = cv2.resize(otsu_aggressive, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    upscale_3x_otsu = cv2.resize(otsu_enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+    upscale_3x_enhanced = cv2.resize(enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+    upscale_4x_otsu_extreme = cv2.resize(otsu_extreme, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+    upscale_4x_otsu_aggressive = cv2.resize(otsu_aggressive, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+
+    adapth_21 = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 5)
+    adapth_31 = cv2.adaptiveThreshold(enhanced_aggressive, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10)
+    upscale_2x_adapt = cv2.resize(adapth_21, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    upscale_3x_adapt = cv2.resize(adapth_31, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+
+    resize_3x_enhanced_only = cv2.resize(enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
+    resize_4x_enhanced = cv2.resize(enhanced, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
 
     return {
-        "color": img,
-        "gray": gray,
+        "otsu": otsu_enhanced,
+        "otsu_aggressive": otsu_aggressive,
+        "otsu_extreme": otsu_extreme,
+        "resize_2x_otsu": upscale_2x_otsu,
+        "resize_2x_otsu_aggressive": upscale_2x_otsu_aggressive,
+        "resize_3x": resize_3x_enhanced_only,
+        "resize_3x_otsu": upscale_3x_otsu,
+        "resize_3x_enhanced": upscale_3x_enhanced,
+        "resize_3x_adapt": upscale_3x_adapt,
+        "resize_4x": resize_4x_enhanced,
+        "resize_4x_otsu_aggressive": upscale_4x_otsu_aggressive,
+        "resize_4x_otsu_extreme": upscale_4x_otsu_extreme,
+        "adaptive_21": adapth_21,
+        "adaptive_31": adapth_31,
+        "resize_2x_adapt": upscale_2x_adapt,
         "enhanced": enhanced,
-        "sharpened": cv2.filter2D(enhanced, -1, sharp_kernel),
-        "otsu": cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-        "denoise": cv2.fastNlMeansDenoising(gray, h=10),
+        "enhanced_aggressive": enhanced_aggressive,
         "bilateral": cv2.bilateralFilter(gray, 9, 75, 75),
-        "clahe_aggressive": enhanced_aggressive,
         "median": cv2.medianBlur(gray, 5),
-        "resize_2x": cv2.resize(enhanced, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC),
-        "resize_3x": cv2.resize(enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC),
     }
 
 
@@ -285,6 +510,44 @@ def try_decode_qr_only(img: np.ndarray) -> list[Any]:
     """
     results = zxingcpp.read_barcodes(img)
     return [r for r in results if "QR" in str(r.format)]
+
+
+def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
+    """Decode QR codes using WeChat QRCode detector (Deep Learning based).
+
+    This decoder is more robust to perspective distortion, background patterns,
+    and degraded image quality compared to traditional decoders.
+
+    Args:
+        img: Input image ndarray (BGR format).
+
+    Returns:
+        A list of decoded barcode objects compatible with zxingcpp format.
+        Returns empty list if WeChat detector not available or decode fails.
+    """
+    if not WECHAT_AVAILABLE or detector is None:
+        return []
+
+    try:
+        # Ensure image is BGR and not too small/large
+        h, w = img.shape[:2]
+        if h < 20 or w < 20 or h > 2000 or w > 2000:
+            return []
+
+        # WeChat detector returns (decoded_text, confidence_scores)
+        results, _ = detector.detectAndDecode(img)
+
+        # Wrap results in a format compatible with our parsing
+        if results:
+            class QRResult:
+                def __init__(self, text):
+                    self.text = text
+                    self.format = "QR_CODE"
+
+            return [QRResult(text) for text in results]
+        return []
+    except Exception as e:
+        return []
 
 
 def parse_cccd_fields(raw_data: str) -> dict[str, Any]:
@@ -331,14 +594,16 @@ def print_cccd_qr_data(raw_data: str) -> None:
     print("-" * 40)
 
 
-def detect_cccd_from_image(img: np.ndarray) -> dict[str, Any]:
+def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> dict[str, Any]:
     """Detect and decode CCCD QR data from a single image.
 
-    The function runs deskew, candidate extraction, preprocessing expansion, and
-    QR decoding. It returns immediately on the first successful decode.
+    Strategy: Try WeChat QRCode (Deep Learning, handles patterns/distortion better)
+    first on the full image, then fall back to region-based preprocessing with zxingcpp
+    if WeChat fails. Returns immediately on first successful decode.
 
     Args:
         img: Input image as a BGR ndarray.
+        debug_dir: Optional directory to save debug images of variants.
 
     Returns:
         A dictionary with detection status and decoded content:
@@ -350,13 +615,38 @@ def detect_cccd_from_image(img: np.ndarray) -> dict[str, Any]:
         - mapped: labeled field dictionary
     """
     img = deskew(img)
+
+    # Strategy 1: Try WeChat QRCode on full image (automatic region detection)
+    if WECHAT_AVAILABLE:
+        qr_results = try_decode_qr_wechat(img)
+        if qr_results:
+            result = qr_results[0]
+            parsed = parse_cccd_fields(result.text)
+            return {
+                "detected": True,
+                "region": "full_image",
+                "variant": "wechat_qrcode",
+                "raw_data": parsed["raw_data"],
+                "fields": parsed["fields"],
+                "mapped": parsed["mapped"],
+            }
+
+    # Strategy 2: Fall back to region-based preprocessing with zxingcpp
     crops = find_qr_candidates(img)
 
     for crop_name, cropped in crops.items():
         if cropped.size == 0:
             continue
-        variants = preprocess_variants(cropped)
+
+        if crop_name.startswith("qr_focused"):
+            variants = preprocess_qr_focused(cropped)
+        else:
+            variants = preprocess_variants(cropped)
+
         for variant_name, variant_img in variants.items():
+            if debug_dir:
+                debug_path = Path(debug_dir) / f"{crop_name}_{variant_name}.jpg"
+                cv2.imwrite(str(debug_path), variant_img)
             qr_results = try_decode_qr_only(variant_img)
             if qr_results:
                 result = qr_results[0]
@@ -380,7 +670,7 @@ def detect_cccd_from_image(img: np.ndarray) -> dict[str, Any]:
     }
 
 
-def read_qr_from_cccd(image_path: Path) -> bool:
+def read_qr_from_cccd(image_path: Path, debug_dir: Path | None = None) -> bool:
     """Run full CCCD QR decoding pipeline for one image path.
 
     The function loads the image, executes detection, prints details, and
@@ -388,6 +678,7 @@ def read_qr_from_cccd(image_path: Path) -> bool:
 
     Args:
         image_path: Path to an input image file.
+        debug_dir: Optional directory to save debug variant images.
 
     Returns:
         True if a QR code is successfully decoded; otherwise False.
@@ -401,7 +692,7 @@ def read_qr_from_cccd(image_path: Path) -> bool:
     print("\n[1/3] Deskew image...")
     print("\n[2/3] Find QR candidate regions...")
     print("\n[3/3] Decode candidates...")
-    result = detect_cccd_from_image(img)
+    result = detect_cccd_from_image(img, debug_dir=debug_dir)
 
     if result["detected"]:
         print(
@@ -459,6 +750,11 @@ def main() -> int:
         nargs="+",
         help="Image files or folders containing images.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Save debug images of all preprocessing variants.",
+    )
     args = parser.parse_args()
 
     image_paths = gather_image_paths(args.inputs)
@@ -466,10 +762,16 @@ def main() -> int:
         print("No valid image files found.")
         return 1
 
+    debug_dir = None
+    if args.debug:
+        debug_dir = Path("debug_variants")
+        debug_dir.mkdir(exist_ok=True)
+        print(f"[DEBUG] Saving variant images to {debug_dir.absolute()}")
+
     success_count = 0
     for path in image_paths:
         print(f"\n--- Processing: {path} ---")
-        if read_qr_from_cccd(path):
+        if read_qr_from_cccd(path, debug_dir=debug_dir):
             success_count += 1
         print("--------------------------")
 

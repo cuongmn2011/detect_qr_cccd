@@ -1,5 +1,5 @@
 numpy
-opencv-python-headless
+opencv-contrib-python-headless>=4.5.0
 Pillow
 pillow-heif
 zxing-cpp
