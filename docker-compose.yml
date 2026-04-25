@@ -1,18 +1,78 @@
+version: '3.8'
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: detectqrcccd-redis
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  detectqrcccd-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: detectqrcccd-worker:latest
+    container_name: detectqrcccd-worker
+    command: celery -A celery_app worker --loglevel=info --concurrency=4 --max-tasks-per-child=100
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   detectqrcccd-api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: detectqrcccd-api:latest
     container_name: detectqrcccd-api
     command: >
       python -m uvicorn service:app
       --host ${APP_HOST:-0.0.0.0}
       --port ${APP_PORT:-8000}
+      --reload
     ports:
       - "${HOST_PORT:-8000}:${APP_PORT:-8000}"
     environment:
       APP_HOST: ${APP_HOST:-0.0.0.0}
       APP_PORT: ${APP_PORT:-8000}
+      REDIS_URL: redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
       - ./asset:/app/asset:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis_data:
+    driver: local

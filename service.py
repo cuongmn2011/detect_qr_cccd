@@ -1,21 +1,30 @@
 from io import BytesIO
 from pathlib import Path
+import asyncio
+import os
 import time
+import uuid
 
 import cv2
 import numpy as np
+import redis as redis_lib
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
 
 from main import detect_cccd_from_image
+from tasks import detect_qr_task
 
 
 app = FastAPI(title="detectQRCCCD Service", version="1.0.0")
 WEB_UI_FILE = Path(__file__).with_name("web").joinpath("index.html")
-RUNTIME_DIR = Path(__file__).with_name("runtime").joinpath("detect")
-CURRENT_DETECT_FILE = RUNTIME_DIR.joinpath("current_detect.jpg")
+
+# Redis configuration for Celery task queue
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_redis = redis_lib.from_url(REDIS_URL)
+IMAGE_TTL = 300  # 5 minutes TTL for temporary image storage
+PREVIEW_TTL = 300  # 5 minutes TTL for preview image in Redis
 
 
 class PathRequest(BaseModel):
@@ -37,20 +46,15 @@ def _load_image_from_path(image_path: str):
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
 
-def _clear_detect_cache() -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    for path in RUNTIME_DIR.glob("*"):
-        if path.is_file():
-            path.unlink()
-
-
-def _save_current_detect_image(img: np.ndarray) -> str:
-    _clear_detect_cache()
+def _save_preview_to_redis(img: np.ndarray, request_id: str) -> str:
+    """Encode image and save to Redis with TTL, return preview URL."""
     success, encoded = cv2.imencode(".jpg", img)
     if not success:
         raise RuntimeError("Cannot encode image for preview")
-    CURRENT_DETECT_FILE.write_bytes(encoded.tobytes())
-    return f"/current-detect-image?t={int(time.time() * 1000)}"
+
+    preview_key = f"preview:{request_id}"
+    _redis.setex(preview_key, PREVIEW_TTL, encoded.tobytes())
+    return f"/current-detect-image/{request_id}"
 
 
 @app.get("/health")
@@ -65,11 +69,14 @@ def web_ui():
     return FileResponse(WEB_UI_FILE)
 
 
-@app.get("/current-detect-image")
-def current_detect_image():
-    if not CURRENT_DETECT_FILE.exists():
-        raise HTTPException(status_code=404, detail="No current detect image")
-    return FileResponse(CURRENT_DETECT_FILE)
+@app.get("/current-detect-image/{request_id}")
+def current_detect_image(request_id: str):
+    """Retrieve preview image from Redis by request ID."""
+    preview_key = f"preview:{request_id}"
+    image_bytes = _redis.get(preview_key)
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="Image not found or expired (TTL 5 minutes)")
+    return Response(content=image_bytes, media_type="image/jpeg")
 
 
 @app.post("/decode/file")
@@ -78,11 +85,32 @@ async def decode_from_upload(file: UploadFile = File(...)):
         raw = await file.read()
         if not raw:
             raise HTTPException(status_code=400, detail="Empty file")
+
+        request_id = str(uuid.uuid4())
+        image_key = f"img:{request_id}"
+        _redis.setex(image_key, IMAGE_TTL, raw)
+
+        task = detect_qr_task.delay(image_key)
+
+        # Poll for task result (avoid task.get() which can cause issues)
+        start_time = time.time()
+        timeout = 60
+        while not task.ready():
+            if time.time() - start_time > timeout:
+                raise TimeoutError(f"Task timeout after {timeout}s")
+            await asyncio.sleep(0.1)
+
+        if task.failed():
+            raise Exception(f"Task failed: {task.info}")
+
+        result = task.result
+
         img = _load_image_from_bytes(raw)
-        image_url = _save_current_detect_image(img)
-        result = detect_cccd_from_image(img)
+        image_url = _save_preview_to_redis(img, request_id)
+
         return {
             "filename": file.filename,
+            "request_id": request_id,
             "current_image_url": image_url,
             **result,
         }
@@ -93,12 +121,39 @@ async def decode_from_upload(file: UploadFile = File(...)):
 
 
 @app.post("/decode/path")
-def decode_from_path(payload: PathRequest):
+async def decode_from_path(payload: PathRequest):
     try:
         img = _load_image_from_path(payload.image_path)
-        result = detect_cccd_from_image(img)
+        success, encoded = cv2.imencode(".jpg", img)
+        if not success:
+            raise RuntimeError("Cannot encode image")
+        raw = encoded.tobytes()
+
+        request_id = str(uuid.uuid4())
+        image_key = f"img:{request_id}"
+        _redis.setex(image_key, IMAGE_TTL, raw)
+
+        task = detect_qr_task.delay(image_key)
+
+        # Poll for task result (avoid task.get() which can cause issues)
+        start_time = time.time()
+        timeout = 60
+        while not task.ready():
+            if time.time() - start_time > timeout:
+                raise TimeoutError(f"Task timeout after {timeout}s")
+            await asyncio.sleep(0.1)
+
+        if task.failed():
+            raise Exception(f"Task failed: {task.info}")
+
+        result = task.result
+
+        image_url = _save_preview_to_redis(img, request_id)
+
         return {
             "image_path": str(Path(payload.image_path).expanduser().resolve()),
+            "request_id": request_id,
+            "current_image_url": image_url,
             **result,
         }
     except FileNotFoundError as exc:

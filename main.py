@@ -1,6 +1,9 @@
 import argparse
 from pathlib import Path
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Event
+import math
 
 import cv2
 import numpy as np
@@ -17,6 +20,11 @@ try:
 except (AttributeError, cv2.error):
     detector = None
     WECHAT_AVAILABLE = False
+
+# Tier 1: Cache CLAHE objects at module level (created once, reused for all crops)
+_CLAHE_30 = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+_CLAHE_50 = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(4, 4))
+_CLAHE_80 = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(2, 2))
 
 CCCD_FIELD_NAMES = [
     "ID Number",
@@ -182,7 +190,8 @@ def perspective_correct(img: np.ndarray) -> np.ndarray:
     return img
 
 
-def extract_qr_focused_regions(img: np.ndarray) -> dict[str, np.ndarray]:
+def extract_qr_focused_regions(img: np.ndarray, blurred: np.ndarray = None,
+                               adaptive_thresholds: dict = None) -> dict[str, np.ndarray]:
     """Extract QR code area separately from background.
 
     Key insight: When sharpening entire image, background patterns also
@@ -191,25 +200,29 @@ def extract_qr_focused_regions(img: np.ndarray) -> dict[str, np.ndarray]:
 
     Args:
         img: Input BGR image
+        blurred: Pre-computed blurred grayscale image (optional, computed if not provided)
+        adaptive_thresholds: Dict of pre-computed thresholds {block_size: binary_img} (optional)
 
     Returns:
         Dictionary with QR-focused candidate regions
     """
     h, w = img.shape[:2]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+    if blurred is None:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+
+    if adaptive_thresholds is None:
+        adaptive_thresholds = {}
 
     crops = {}
 
     for block_size in [11, 21]:
-        binary = cv2.adaptiveThreshold(
-            blurred,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            block_size,
-            2,
-        )
+        if block_size in adaptive_thresholds:
+            binary = adaptive_thresholds[block_size]
+        else:
+            binary = cv2.adaptiveThreshold(
+                blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block_size, 2
+            )
 
         patterns = find_finder_patterns(binary)
         if len(patterns) >= 3:
@@ -278,11 +291,18 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
     The function combines contour-based square detection, finder-pattern based
     region proposal, and coarse grid splitting to maximize detection recall.
 
+    Regions are ordered by specificity (most specific first) to enable early exit:
+    1. QR-focused regions (detected QR patterns)
+    2. Finder patterns
+    3. Contours
+    4. Grid cells
+    5. Full image variants (least specific)
+
     Args:
         img: Input image as a BGR ndarray.
 
     Returns:
-        A dictionary mapping region names to cropped image ndarrays.
+        A dictionary mapping region names to cropped image ndarrays (ordered for early exit).
     """
     h, w = img.shape[:2]
     crops: dict[str, np.ndarray] = {}
@@ -290,15 +310,43 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (9, 9), 0)
 
-    for block_size in [11, 21, 31]:
-        binary = cv2.adaptiveThreshold(
-            blurred,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            block_size,
-            2,
+    # Pre-compute adaptive thresholds to avoid recomputation
+    adaptive_thresholds = {}
+    for block_size in [11, 21]:
+        adaptive_thresholds[block_size] = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block_size, 2
         )
+
+    # === 1. QR-focused regions (most specific) ===
+    qr_focused = extract_qr_focused_regions(img, blurred, adaptive_thresholds)
+    crops.update(qr_focused)
+
+    # === 2. Finder patterns ===
+    for block_size in [11, 21]:
+        binary = adaptive_thresholds[block_size]
+        patterns = find_finder_patterns(binary)
+        if len(patterns) >= 3:
+            all_x = [p[0] for p in patterns] + [p[0] + p[2] for p in patterns]
+            all_y = [p[1] for p in patterns] + [p[1] + p[3] for p in patterns]
+            x1, y1 = max(0, min(all_x)), max(0, min(all_y))
+            x2, y2 = min(w, max(all_x)), min(h, max(all_y))
+            pw = int((x2 - x1) * 0.2)
+            ph = int((y2 - y1) * 0.2)
+            x1 = max(0, x1 - pw)
+            y1 = max(0, y1 - ph)
+            x2 = min(w, x2 + pw)
+            y2 = min(h, y2 + ph)
+            crops[f"finder_pattern_{block_size}"] = img[y1:y2, x1:x2]
+            print(f"  -> Finder-pattern region: ({x1},{y1}) -> ({x2},{y2})")
+
+    # === 3. Contours ===
+    for block_size in [11, 21, 31]:
+        if block_size in adaptive_thresholds:
+            binary = adaptive_thresholds[block_size]
+        else:
+            binary = cv2.adaptiveThreshold(
+                blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block_size, 2
+            )
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
 
@@ -329,30 +377,7 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
                         key = f"contour_{block_size}_{x}_{y}_pad{int(pad_factor*100)}"
                         crops[key] = img[y1:y2, x1:x2]
 
-    for block_size in [11, 21]:
-        binary = cv2.adaptiveThreshold(
-            blurred,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            block_size,
-            2,
-        )
-        patterns = find_finder_patterns(binary)
-        if len(patterns) >= 3:
-            all_x = [p[0] for p in patterns] + [p[0] + p[2] for p in patterns]
-            all_y = [p[1] for p in patterns] + [p[1] + p[3] for p in patterns]
-            x1, y1 = max(0, min(all_x)), max(0, min(all_y))
-            x2, y2 = min(w, max(all_x)), min(h, max(all_y))
-            pw = int((x2 - x1) * 0.2)
-            ph = int((y2 - y1) * 0.2)
-            x1 = max(0, x1 - pw)
-            y1 = max(0, y1 - ph)
-            x2 = min(w, x2 + pw)
-            y2 = min(h, y2 + ph)
-            crops[f"finder_pattern_{block_size}"] = img[y1:y2, x1:x2]
-            print(f"  -> Finder-pattern region: ({x1},{y1}) -> ({x2},{y2})")
-
+    # === 4. Grid cells ===
     for row in range(3):
         for col in range(3):
             y1 = int(h * row / 3)
@@ -361,9 +386,7 @@ def find_qr_candidates(img: np.ndarray) -> dict[str, np.ndarray]:
             x2 = int(w * (col + 1) / 3)
             crops[f"grid_{row}_{col}"] = img[y1:y2, x1:x2]
 
-    qr_focused = extract_qr_focused_regions(img)
-    crops.update(qr_focused)
-
+    # === 5. Full image variants (least specific) ===
     crops["full"] = img
     crops["full_right"] = img[:, w // 2 :]
     crops["full_bottom"] = img[h // 2 :, :]
@@ -447,12 +470,9 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
 
     h, w = gray.shape
 
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    clahe_aggressive = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(4, 4))
-    enhanced_aggressive = clahe_aggressive.apply(gray)
-    clahe_extreme = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(2, 2))
-    enhanced_extreme = clahe_extreme.apply(gray)
+    enhanced = _CLAHE_30.apply(gray)
+    enhanced_aggressive = _CLAHE_50.apply(gray)
+    enhanced_extreme = _CLAHE_80.apply(gray)
 
     otsu_enhanced = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     otsu_aggressive = cv2.threshold(enhanced_aggressive, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -464,7 +484,6 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
     upscale_2x_otsu = cv2.resize(otsu_enhanced, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
     upscale_2x_otsu_aggressive = cv2.resize(otsu_aggressive, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
     upscale_3x_otsu = cv2.resize(otsu_enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
-    upscale_3x_enhanced = cv2.resize(enhanced, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC)
     upscale_4x_otsu_extreme = cv2.resize(otsu_extreme, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
     upscale_4x_otsu_aggressive = cv2.resize(otsu_aggressive, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
 
@@ -477,25 +496,24 @@ def preprocess_variants(img: np.ndarray) -> dict[str, np.ndarray]:
     resize_4x_enhanced = cv2.resize(enhanced, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
 
     return {
+        "resize_3x": resize_3x_enhanced_only,
+        "resize_3x_adapt": upscale_3x_adapt,
+        "resize_4x": resize_4x_enhanced,
+        "resize_3x_otsu": upscale_3x_otsu,
+        "resize_4x_otsu_aggressive": upscale_4x_otsu_aggressive,
+        "resize_4x_otsu_extreme": upscale_4x_otsu_extreme,
+        "resize_2x_otsu": upscale_2x_otsu,
+        "resize_2x_otsu_aggressive": upscale_2x_otsu_aggressive,
+        "resize_2x_adapt": upscale_2x_adapt,
         "otsu": otsu_enhanced,
         "otsu_aggressive": otsu_aggressive,
         "otsu_extreme": otsu_extreme,
-        "resize_2x_otsu": upscale_2x_otsu,
-        "resize_2x_otsu_aggressive": upscale_2x_otsu_aggressive,
-        "resize_3x": resize_3x_enhanced_only,
-        "resize_3x_otsu": upscale_3x_otsu,
-        "resize_3x_enhanced": upscale_3x_enhanced,
-        "resize_3x_adapt": upscale_3x_adapt,
-        "resize_4x": resize_4x_enhanced,
-        "resize_4x_otsu_aggressive": upscale_4x_otsu_aggressive,
-        "resize_4x_otsu_extreme": upscale_4x_otsu_extreme,
         "adaptive_21": adapth_21,
         "adaptive_31": adapth_31,
-        "resize_2x_adapt": upscale_2x_adapt,
         "enhanced": enhanced,
         "enhanced_aggressive": enhanced_aggressive,
-        "bilateral": cv2.bilateralFilter(gray, 9, 75, 75),
         "median": cv2.medianBlur(gray, 5),
+        "bilateral": cv2.bilateralFilter(gray, 9, 75, 75),
     }
 
 
@@ -508,8 +526,69 @@ def try_decode_qr_only(img: np.ndarray) -> list[Any]:
     Returns:
         A list of decoded barcode objects filtered to QR format only.
     """
-    results = zxingcpp.read_barcodes(img)
-    return [r for r in results if "QR" in str(r.format)]
+    if img.size == 0 or img.shape[0] == 0 or img.shape[1] == 0:
+        return []
+
+    try:
+        results = zxingcpp.read_barcodes(img)
+        return [r for r in results if "QR" in str(r.format)]
+    except Exception as e:
+        return []
+
+
+def _decode_chunk(chunk: list[tuple], stop_event: Event) -> tuple[str, str, Any] | None:
+    """Decode a chunk of variants sequentially, respecting early-exit signal.
+
+    Args:
+        chunk: List of (crop_name, variant_name, variant_img) tuples to decode
+        stop_event: Shared threading.Event set when another thread finds a result
+
+    Returns:
+        (crop_name, variant_name, result) tuple on success, None if stop or fail
+    """
+    for crop_name, variant_name, variant_img in chunk:
+        if stop_event.is_set():
+            return None
+        qr_results = try_decode_qr_only(variant_img)
+        if qr_results:
+            return (crop_name, variant_name, qr_results[0])
+    return None
+
+
+def try_decode_parallel(all_variants: list[tuple], n_threads: int = 3) -> tuple[str, str, Any] | None:
+    """Decode all variants in parallel with early-exit on first success.
+
+    Splits variants into N chunks and runs them on separate threads. When any
+    thread finds a result, it signals others to stop after their current attempt.
+
+    Args:
+        all_variants: List of (crop_name, variant_name, variant_img) tuples
+        n_threads: Number of parallel threads (default 3)
+
+    Returns:
+        (crop_name, variant_name, qr_result) on success, None if all fail
+    """
+    if not all_variants:
+        return None
+
+    stop_event = Event()
+    chunk_size = math.ceil(len(all_variants) / n_threads)
+    chunks = [
+        all_variants[i:i + chunk_size] for i in range(0, len(all_variants), chunk_size)
+    ]
+
+    with ThreadPoolExecutor(max_workers=n_threads) as executor:
+        futures = [
+            executor.submit(_decode_chunk, chunk, stop_event) for chunk in chunks
+        ]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                stop_event.set()
+                executor.shutdown(wait=False, cancel_futures=True)
+                return result
+
+    return None
 
 
 def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
@@ -634,6 +713,8 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
     # Strategy 2: Fall back to region-based preprocessing with zxingcpp
     crops = find_qr_candidates(img)
 
+    # Tier 3: Collect all (crop_name, variant_name, variant_img) for parallel decode
+    all_variants = []
     for crop_name, cropped in crops.items():
         if cropped.size == 0:
             continue
@@ -647,18 +728,21 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
             if debug_dir:
                 debug_path = Path(debug_dir) / f"{crop_name}_{variant_name}.jpg"
                 cv2.imwrite(str(debug_path), variant_img)
-            qr_results = try_decode_qr_only(variant_img)
-            if qr_results:
-                result = qr_results[0]
-                parsed = parse_cccd_fields(result.text)
-                return {
-                    "detected": True,
-                    "region": crop_name,
-                    "variant": variant_name,
-                    "raw_data": parsed["raw_data"],
-                    "fields": parsed["fields"],
-                    "mapped": parsed["mapped"],
-                }
+            all_variants.append((crop_name, variant_name, variant_img))
+
+    # Parallel decode with early-exit (3 threads by default)
+    parallel_result = try_decode_parallel(all_variants, n_threads=3)
+    if parallel_result:
+        crop_name, variant_name, qr_result = parallel_result
+        parsed = parse_cccd_fields(qr_result.text)
+        return {
+            "detected": True,
+            "region": crop_name,
+            "variant": variant_name,
+            "raw_data": parsed["raw_data"],
+            "fields": parsed["fields"],
+            "mapped": parsed["mapped"],
+        }
 
     return {
         "detected": False,
@@ -699,8 +783,11 @@ def read_qr_from_cccd(image_path: Path, debug_dir: Path | None = None) -> bool:
             f"\n[SUCCESS] QR detected "
             f"(region={result['region']}, variant={result['variant']})"
         )
-        print(f"\nRaw data: {result['raw_data']}")
-        print_cccd_qr_data(result["raw_data"])
+        try:
+            print(f"\nRaw data: {result['raw_data']}")
+            print_cccd_qr_data(result["raw_data"])
+        except UnicodeEncodeError:
+            print(f"\nRaw data: [Unicode content - {len(result['raw_data'])} chars]")
         return True
 
     print("\n[FAILED] QR code not found.")

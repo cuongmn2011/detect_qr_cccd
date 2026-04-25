@@ -29,5 +29,11 @@ service.err.log
 # Docker local overrides
 docker-compose.override.yml
 
-# Local data (avoid pushing personal images)
-asset/
+# Local config and secrets
+.claude/settings.local.json
+
+# Generated logs
+logs/
+
+# PyInstaller backups
+*.spec.bak
