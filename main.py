@@ -1,4 +1,5 @@
 import argparse
+import logging
 from pathlib import Path
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,9 +11,7 @@ from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 import zxingcpp
 
-# Logger (all logs captured by Celery and written to celery_YYYYMMDD.log)
-# Application logs go through standard Python logging module
-_logger = None  # Not needed anymore - Celery handles all logging
+logger = logging.getLogger('main')
 
 register_heif_opener()
 
@@ -55,8 +54,7 @@ def load_image(image_path: Path) -> np.ndarray:
     pil_img = ImageOps.exif_transpose(pil_img)
     img = np.array(pil_img)
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    if _logger:
-        _logger.info('main', f"Loaded image: {image_path} | shape={img.shape}")
+    logger.info(f"Loaded image: {image_path} | shape={img.shape}")
     return img
 
 
@@ -114,8 +112,7 @@ def deskew(img: np.ndarray) -> np.ndarray:
     if median_angle is None or abs(median_angle) < 0.5:
         return img
 
-    if _logger:
-        _logger.debug('main', f"Deskew rotation: {median_angle:.2f} degrees")
+    logger.debug(f"Deskew rotation: {median_angle:.2f} degrees")
     matrix = cv2.getRotationMatrix2D((w / 2, h / 2), median_angle, 1.0)
     deskewed = cv2.warpAffine(
         img,
@@ -538,8 +535,7 @@ def try_decode_qr_only(img: np.ndarray) -> list[Any]:
         results = zxingcpp.read_barcodes(img)
         return [r for r in results if "QR" in str(r.format)]
     except Exception as e:
-        if _logger:
-            _logger.debug('main', f"try_decode_qr_only failed: {type(e).__name__}: {str(e)}")
+        logger.debug(f"try_decode_qr_only failed: {type(e).__name__}: {str(e)}")
         return []
 
 
@@ -633,8 +629,7 @@ def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
             return [QRResult(text) for text in results]
         return []
     except Exception as e:
-        if _logger:
-            _logger.debug('main', f"try_decode_qr_wechat failed: {type(e).__name__}: {str(e)}")
+        logger.debug(f"try_decode_qr_wechat failed: {type(e).__name__}: {str(e)}")
         return []
 
 
@@ -705,7 +700,7 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
     try:
         img = deskew(img)
     except Exception as e:
-        print(f"[ERROR] Deskew failed: {str(e)}")
+        logger.error(f"Deskew failed: {str(e)}", exc_info=True)
         return {
             "detected": False,
             "region": None,
@@ -732,13 +727,13 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
                         "mapped": parsed["mapped"],
                     }
             except Exception as e:
-                print(f"[WARNING] WeChat QRCode detection failed: {str(e)}")
+                logger.warning(f"WeChat QRCode detection failed: {str(e)}")
 
         # Strategy 2: Fall back to region-based preprocessing with zxingcpp
         try:
             crops = find_qr_candidates(img)
         except Exception as e:
-            print(f"[ERROR] Finding QR candidates failed: {str(e)}")
+            logger.error(f"Finding QR candidates failed: {str(e)}", exc_info=True)
             return {
                 "detected": False,
                 "region": None,
@@ -761,7 +756,7 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
                     else:
                         variants = preprocess_variants(cropped)
                 except Exception as e:
-                    print(f"[WARNING] Preprocessing variant for {crop_name} failed: {str(e)}")
+                    logger.warning(f"Preprocessing variant for {crop_name} failed: {str(e)}")
                     continue
 
                 for variant_name, variant_img in variants.items():
@@ -770,10 +765,10 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
                             debug_path = Path(debug_dir) / f"{crop_name}_{variant_name}.jpg"
                             cv2.imwrite(str(debug_path), variant_img)
                         except Exception as e:
-                            print(f"[WARNING] Failed to save debug image: {str(e)}")
+                            logger.warning(f"Failed to save debug image: {str(e)}")
                     all_variants.append((crop_name, variant_name, variant_img))
         except Exception as e:
-            print(f"[ERROR] Processing variants failed: {str(e)}")
+            logger.error(f"Processing variants failed: {str(e)}", exc_info=True)
 
         # Parallel decode with early-exit (3 threads by default)
         try:
@@ -790,7 +785,7 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
                     "mapped": parsed["mapped"],
                 }
         except Exception as e:
-            print(f"[ERROR] Parallel decoding failed: {str(e)}")
+            logger.error(f"Parallel decoding failed: {str(e)}", exc_info=True)
 
         return {
             "detected": False,
@@ -801,7 +796,7 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
             "mapped": {},
         }
     except Exception as e:
-        print(f"[ERROR] Unexpected error in detect_cccd_from_image: {str(e)}")
+        logger.error(f"Unexpected error in detect_cccd_from_image: {str(e)}", exc_info=True)
         return {
             "detected": False,
             "region": None,
@@ -828,7 +823,7 @@ def read_qr_from_cccd(image_path: Path, debug_dir: Path | None = None) -> bool:
     try:
         img = load_image(image_path)
     except Exception as exc:
-        print(f"[ERROR] Cannot open image {image_path}: {exc}")
+        logger.error(f"Cannot open image {image_path}: {exc}", exc_info=True)
         return False
 
     print("\n[1/3] Deskew image...")
@@ -911,7 +906,7 @@ def main() -> int:
     if args.debug:
         debug_dir = Path("debug_variants")
         debug_dir.mkdir(exist_ok=True)
-        print(f"[DEBUG] Saving variant images to {debug_dir.absolute()}")
+        logger.debug(f"Saving variant images to {debug_dir.absolute()}")
 
     success_count = 0
     for path in image_paths:
