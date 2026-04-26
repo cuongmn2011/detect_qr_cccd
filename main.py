@@ -10,12 +10,9 @@ from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 import zxingcpp
 
-# Direct logger for file writing (bypasses Celery logging hijacking)
-try:
-    from logger import get_direct_logger
-    _logger = get_direct_logger()
-except:
-    _logger = None
+# Logger (all logs captured by Celery and written to celery_YYYYMMDD.log)
+# Application logs go through standard Python logging module
+_logger = None  # Not needed anymore - Celery handles all logging
 
 register_heif_opener()
 
@@ -705,65 +702,114 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
         - fields: list of parsed values
         - mapped: labeled field dictionary
     """
-    img = deskew(img)
-
-    # Strategy 1: Try WeChat QRCode on full image (automatic region detection)
-    if WECHAT_AVAILABLE:
-        qr_results = try_decode_qr_wechat(img)
-        if qr_results:
-            result = qr_results[0]
-            parsed = parse_cccd_fields(result.text)
-            return {
-                "detected": True,
-                "region": "full_image",
-                "variant": "wechat_qrcode",
-                "raw_data": parsed["raw_data"],
-                "fields": parsed["fields"],
-                "mapped": parsed["mapped"],
-            }
-
-    # Strategy 2: Fall back to region-based preprocessing with zxingcpp
-    crops = find_qr_candidates(img)
-
-    # Tier 3: Collect all (crop_name, variant_name, variant_img) for parallel decode
-    all_variants = []
-    for crop_name, cropped in crops.items():
-        if cropped.size == 0:
-            continue
-
-        if crop_name.startswith("qr_focused"):
-            variants = preprocess_qr_focused(cropped)
-        else:
-            variants = preprocess_variants(cropped)
-
-        for variant_name, variant_img in variants.items():
-            if debug_dir:
-                debug_path = Path(debug_dir) / f"{crop_name}_{variant_name}.jpg"
-                cv2.imwrite(str(debug_path), variant_img)
-            all_variants.append((crop_name, variant_name, variant_img))
-
-    # Parallel decode with early-exit (3 threads by default)
-    parallel_result = try_decode_parallel(all_variants, n_threads=3)
-    if parallel_result:
-        crop_name, variant_name, qr_result = parallel_result
-        parsed = parse_cccd_fields(qr_result.text)
+    try:
+        img = deskew(img)
+    except Exception as e:
+        print(f"[ERROR] Deskew failed: {str(e)}")
         return {
-            "detected": True,
-            "region": crop_name,
-            "variant": variant_name,
-            "raw_data": parsed["raw_data"],
-            "fields": parsed["fields"],
-            "mapped": parsed["mapped"],
+            "detected": False,
+            "region": None,
+            "variant": None,
+            "raw_data": None,
+            "fields": [],
+            "mapped": {},
         }
 
-    return {
-        "detected": False,
-        "region": None,
-        "variant": None,
-        "raw_data": None,
-        "fields": [],
-        "mapped": {},
-    }
+    try:
+        # Strategy 1: Try WeChat QRCode on full image (automatic region detection)
+        if WECHAT_AVAILABLE:
+            try:
+                qr_results = try_decode_qr_wechat(img)
+                if qr_results:
+                    result = qr_results[0]
+                    parsed = parse_cccd_fields(result.text)
+                    return {
+                        "detected": True,
+                        "region": "full_image",
+                        "variant": "wechat_qrcode",
+                        "raw_data": parsed["raw_data"],
+                        "fields": parsed["fields"],
+                        "mapped": parsed["mapped"],
+                    }
+            except Exception as e:
+                print(f"[WARNING] WeChat QRCode detection failed: {str(e)}")
+
+        # Strategy 2: Fall back to region-based preprocessing with zxingcpp
+        try:
+            crops = find_qr_candidates(img)
+        except Exception as e:
+            print(f"[ERROR] Finding QR candidates failed: {str(e)}")
+            return {
+                "detected": False,
+                "region": None,
+                "variant": None,
+                "raw_data": None,
+                "fields": [],
+                "mapped": {},
+            }
+
+        # Tier 3: Collect all (crop_name, variant_name, variant_img) for parallel decode
+        all_variants = []
+        try:
+            for crop_name, cropped in crops.items():
+                if cropped.size == 0:
+                    continue
+
+                try:
+                    if crop_name.startswith("qr_focused"):
+                        variants = preprocess_qr_focused(cropped)
+                    else:
+                        variants = preprocess_variants(cropped)
+                except Exception as e:
+                    print(f"[WARNING] Preprocessing variant for {crop_name} failed: {str(e)}")
+                    continue
+
+                for variant_name, variant_img in variants.items():
+                    if debug_dir:
+                        try:
+                            debug_path = Path(debug_dir) / f"{crop_name}_{variant_name}.jpg"
+                            cv2.imwrite(str(debug_path), variant_img)
+                        except Exception as e:
+                            print(f"[WARNING] Failed to save debug image: {str(e)}")
+                    all_variants.append((crop_name, variant_name, variant_img))
+        except Exception as e:
+            print(f"[ERROR] Processing variants failed: {str(e)}")
+
+        # Parallel decode with early-exit (3 threads by default)
+        try:
+            parallel_result = try_decode_parallel(all_variants, n_threads=3)
+            if parallel_result:
+                crop_name, variant_name, qr_result = parallel_result
+                parsed = parse_cccd_fields(qr_result.text)
+                return {
+                    "detected": True,
+                    "region": crop_name,
+                    "variant": variant_name,
+                    "raw_data": parsed["raw_data"],
+                    "fields": parsed["fields"],
+                    "mapped": parsed["mapped"],
+                }
+        except Exception as e:
+            print(f"[ERROR] Parallel decoding failed: {str(e)}")
+
+        return {
+            "detected": False,
+            "region": None,
+            "variant": None,
+            "raw_data": None,
+            "fields": [],
+            "mapped": {},
+        }
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in detect_cccd_from_image: {str(e)}")
+        return {
+            "detected": False,
+            "region": None,
+            "variant": None,
+            "raw_data": None,
+            "fields": [],
+            "mapped": {},
+        }
 
 
 def read_qr_from_cccd(image_path: Path, debug_dir: Path | None = None) -> bool:

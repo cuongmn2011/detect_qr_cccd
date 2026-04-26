@@ -32,15 +32,22 @@ def detect_qr_task(self, image_key: str) -> dict:
     logger.info(f"[detect_qr] task started | image_key={image_key}")
 
     try:
-        raw = _redis.get(image_key)
+        try:
+            raw = _redis.get(image_key)
+        except Exception as e:
+            raise RuntimeError(f"Failed to retrieve image from Redis: {str(e)}")
+
         _redis.delete(image_key)
 
         if raw is None:
             raise ValueError("Image key expired or not found")
 
-        pil_img = Image.open(BytesIO(raw)).convert("RGB")
-        img = np.array(pil_img)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        try:
+            pil_img = Image.open(BytesIO(raw)).convert("RGB")
+            img = np.array(pil_img)
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        except (IOError, OSError) as e:
+            raise ValueError(f"Invalid image format: {str(e)}")
 
         result = detect_cccd_from_image(img)
 

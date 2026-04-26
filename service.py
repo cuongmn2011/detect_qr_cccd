@@ -36,18 +36,28 @@ class PathRequest(BaseModel):
 
 
 def _load_image_from_bytes(data: bytes):
-    pil_img = Image.open(BytesIO(data)).convert("RGB")
-    img = np.array(pil_img)
-    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    try:
+        pil_img = Image.open(BytesIO(data)).convert("RGB")
+        img = np.array(pil_img)
+        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    except (IOError, OSError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}") from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot process image: {str(e)}") from e
 
 
 def _load_image_from_path(image_path: str):
     path = Path(image_path).expanduser().resolve()
     if not path.exists() or not path.is_file():
         raise FileNotFoundError(f"Image not found: {path}")
-    pil_img = Image.open(path).convert("RGB")
-    img = np.array(pil_img)
-    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    try:
+        pil_img = Image.open(path).convert("RGB")
+        img = np.array(pil_img)
+        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    except (IOError, OSError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}") from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot process image: {str(e)}") from e
 
 
 def _save_preview_to_redis(img: np.ndarray, request_id: str) -> str:
@@ -57,7 +67,10 @@ def _save_preview_to_redis(img: np.ndarray, request_id: str) -> str:
         raise RuntimeError("Cannot encode image for preview")
 
     preview_key = f"preview:{request_id}"
-    _redis.setex(preview_key, PREVIEW_TTL, encoded.tobytes())
+    try:
+        _redis.setex(preview_key, PREVIEW_TTL, encoded.tobytes())
+    except Exception as e:
+        logger.warning(f"Failed to save preview to Redis: {str(e)}, continuing without preview")
     return f"/current-detect-image/{request_id}"
 
 
@@ -77,10 +90,16 @@ def web_ui():
 def current_detect_image(request_id: str):
     """Retrieve preview image from Redis by request ID."""
     preview_key = f"preview:{request_id}"
-    image_bytes = _redis.get(preview_key)
-    if not image_bytes:
-        raise HTTPException(status_code=404, detail="Image not found or expired (TTL 5 minutes)")
-    return Response(content=image_bytes, media_type="image/jpeg")
+    try:
+        image_bytes = _redis.get(preview_key)
+        if not image_bytes:
+            raise HTTPException(status_code=404, detail="Image not found or expired (TTL 5 minutes)")
+        return Response(content=image_bytes, media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving preview from Redis: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve preview image") from e
 
 
 @app.post("/decode/file")
@@ -93,9 +112,18 @@ async def decode_from_upload(file: UploadFile = File(...)):
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
         logger.info(f"POST /decode/file | file={file.filename} | size={len(raw)} bytes | request_id={request_id}")
-        _redis.setex(image_key, IMAGE_TTL, raw)
 
-        task = detect_qr_task.delay(image_key)
+        try:
+            _redis.setex(image_key, IMAGE_TTL, raw)
+        except Exception as e:
+            logger.error(f"Failed to save image to Redis: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Server error: failed to process request") from e
+
+        try:
+            task = detect_qr_task.delay(image_key)
+        except Exception as e:
+            logger.error(f"Failed to create Celery task: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Server error: detection service unavailable") from e
 
         # Poll for task result (avoid task.get() which can cause issues)
         start_time = time.time()
@@ -109,6 +137,10 @@ async def decode_from_upload(file: UploadFile = File(...)):
             raise Exception(f"Task failed: {task.info}")
 
         result = task.result
+        if not isinstance(result, dict):
+            raise ValueError(f"Invalid task result type: {type(result)}")
+        if 'detected' not in result:
+            raise ValueError("Task result missing 'detected' key")
 
         img = _load_image_from_bytes(raw)
         image_url = _save_preview_to_redis(img, request_id)
@@ -141,9 +173,18 @@ async def decode_from_path(payload: PathRequest):
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
         logger.info(f"POST /decode/path | path={payload.image_path} | size={len(raw)} bytes | request_id={request_id}")
-        _redis.setex(image_key, IMAGE_TTL, raw)
 
-        task = detect_qr_task.delay(image_key)
+        try:
+            _redis.setex(image_key, IMAGE_TTL, raw)
+        except Exception as e:
+            logger.error(f"Failed to save image to Redis: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Server error: failed to process request") from e
+
+        try:
+            task = detect_qr_task.delay(image_key)
+        except Exception as e:
+            logger.error(f"Failed to create Celery task: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Server error: detection service unavailable") from e
 
         # Poll for task result (avoid task.get() which can cause issues)
         start_time = time.time()
@@ -157,6 +198,10 @@ async def decode_from_path(payload: PathRequest):
             raise Exception(f"Task failed: {task.info}")
 
         result = task.result
+        if not isinstance(result, dict):
+            raise ValueError(f"Invalid task result type: {type(result)}")
+        if 'detected' not in result:
+            raise ValueError("Task result missing 'detected' key")
 
         image_url = _save_preview_to_redis(img, request_id)
 
