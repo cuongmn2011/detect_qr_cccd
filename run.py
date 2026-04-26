@@ -44,13 +44,19 @@ def start_celery_worker_development():
     Start Celery worker in development mode.
     Logs to .temp/ folder with INFO level.
     """
-    import datetime
-    from logger import get_log_dir
+    import sys
 
     print(f"[Celery] Starting worker (Development mode)")
     print(f"[Redis] {REDIS_URL}")
 
-    log_dir = get_log_dir()
+    # Determine log directory (next to exe or next to source)
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(base_dir, '.temp')
+    os.makedirs(log_dir, exist_ok=True)
+
     now = datetime.datetime.now()
     date_str = now.strftime('%Y%m%d')
     log_file = f"{log_dir}/celery_{date_str}.log"
@@ -70,15 +76,22 @@ def start_celery_worker_production():
     Start Celery worker in production mode.
     Logs to file with ERROR level only.
     """
-    print(f"🔄 Starting Celery worker (Production mode)")
-    print(f"📍 Redis: {REDIS_URL}")
+    import sys
 
-    # Create logs directory if it doesn't exist
-    os.makedirs(LOGGING_DIR, exist_ok=True)
+    print(f"[Celery] Starting Celery worker (Production mode)")
+    print(f"[Redis] Redis: {REDIS_URL}")
+
+    # Determine log directory (next to exe or next to source)
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(base_dir, '.temp')
+    os.makedirs(log_dir, exist_ok=True)
 
     now = datetime.datetime.now()
     date_str = now.strftime('%Y%m%d')
-    log_file = os.path.join(LOGGING_DIR, f"celery_{date_str}.log")
+    log_file = os.path.join(log_dir, f"celery_{date_str}.log")
 
     celery.worker_main(
         argv=[
