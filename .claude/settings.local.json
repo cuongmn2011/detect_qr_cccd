@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python -m py_compile main.py)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python main.py asset/z7762856693462_e2558ce1297130a8a735116af88bca2e.jpg)"
     ]
   }
 }

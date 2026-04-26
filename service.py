@@ -16,6 +16,7 @@ from PIL import Image
 
 from main import detect_cccd_from_image
 from tasks import detect_qr_task
+import logging
 
 logger = logging.getLogger('service')
 

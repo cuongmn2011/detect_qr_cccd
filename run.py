@@ -16,9 +16,6 @@ REDIS_DB = os.getenv("REDIS_DB", "10")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 os.environ["REDIS_URL"] = REDIS_URL
 
-# Setup logging BEFORE importing other modules
-from logger import setup_logging
-setup_logging()
 
 import uvicorn
 from celery_app import celery

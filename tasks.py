@@ -9,6 +9,7 @@ import redis as redis_lib
 
 from celery_app import celery
 from main import detect_cccd_from_image
+import logging
 
 logger = logging.getLogger('tasks')
 
