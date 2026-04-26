@@ -1870,8 +1870,12 @@
       hideCameraMode();
       setStatus("Camera stopped.");
     });
-    zoomBtn.addEventListener("click", openZoomModal);
-    deleteBtn.addEventListener("click", () => {
+    zoomBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openZoomModal();
+    });
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       capturedFile = null;
       fileInput.value = "";
       clearCurrentResult();
