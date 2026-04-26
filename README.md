@@ -2,6 +2,8 @@
 
 Service nhận ảnh CCCD và giải mã dữ liệu QR code với kiến trúc hỗ trợ 100+ người dùng đồng thời.
 
+**Repository**: [cuongmn2011/detect_qr_cccd](https://github.com/cuongmn2011/detect_qr_cccd)
+
 ## Kiến Trúc
 
 Hệ thống sử dụng:
@@ -447,3 +449,15 @@ Xem [.claude/](`.claude/`) folder cho thêm thông tin về:
 - Kiến trúc chi tiết
 - Optimization plans
 - Solution documents
+
+---
+
+# 👤 Tác Giả
+
+**Cuong Manh Nguyen** - [cuongmn2011@gmail.com](mailto:cuongmn2011@gmail.com)
+
+---
+
+# 📄 License
+
+Dự án này được phát hành dưới **MIT License**. Xem file [LICENSE](LICENSE) để chi tiết.
