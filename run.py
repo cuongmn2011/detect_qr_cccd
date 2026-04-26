@@ -16,6 +16,10 @@ REDIS_DB = os.getenv("REDIS_DB", "10")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 os.environ["REDIS_URL"] = REDIS_URL
 
+# Setup logging BEFORE importing other modules
+from logger import setup_logging
+setup_logging()
+
 import uvicorn
 from celery_app import celery
 from service import app as fastapi_app
@@ -41,16 +45,25 @@ LOG_LEVEL_PROD = "error"
 def start_celery_worker_development():
     """
     Start Celery worker in development mode.
-    Logs to console with INFO level.
+    Logs to .temp/ folder with INFO level.
     """
-    print(f"🔄 Starting Celery worker (Development mode)")
-    print(f"📍 Redis: {REDIS_URL}")
+    import datetime
+    from logger import get_log_dir
+
+    print(f"[Celery] Starting worker (Development mode)")
+    print(f"[Redis] {REDIS_URL}")
+
+    log_dir = get_log_dir()
+    now = datetime.datetime.now()
+    date_str = now.strftime('%Y%m%d')
+    log_file = f"{log_dir}/celery_{date_str}.log"
 
     celery.worker_main(
         argv=[
             "worker",
             "-l", LOG_LEVEL_DEV,
             "-P", "threads",  # Use threads pool for lighter footprint
+            f"--logfile={log_file}",
         ]
     )
 
@@ -84,13 +97,13 @@ def start_development_env():
     """
     Development mode: FastAPI server + Celery worker in background.
     Server listens on 127.0.0.1:8000 with hot reload.
-    Logs to console.
+    Logs to console and .temp/YYYY-MM-DD.txt
     """
     print("\n" + "="*60)
-    print("🚀 Starting CCCD QR Detector (Development Mode)")
+    print("[DEV] Starting CCCD QR Detector (Development Mode)")
     print("="*60)
-    print(f"🌐 Server: http://{SERVER_HOST}:{SERVER_PORT}")
-    print(f"📍 Redis: {REDIS_URL}")
+    print(f"Server: http://{SERVER_HOST}:{SERVER_PORT}")
+    print(f"Redis: {REDIS_URL}")
     print("="*60 + "\n")
 
     # Start Celery worker in background thread (daemon, won't block shutdown)
@@ -101,11 +114,12 @@ def start_development_env():
     import time
     time.sleep(2)
 
-    print("✅ FastAPI server starting...\n")
+    print("[FastAPI] Server starting...\n")
 
     # Start FastAPI server in main thread (blocking)
     # Note: reload=False because we import the app object directly
     # For hot reload, use: uvicorn run.py:fastapi_app --reload
+    # Uvicorn logs will use root logger (DailyTextHandler) via propagation
     uvicorn.run(
         fastapi_app,
         host=SERVER_HOST,
@@ -119,14 +133,14 @@ def start_production_env():
     """
     Production mode: FastAPI server + Celery worker in background.
     Server listens on 0.0.0.0 for remote access.
-    Logs to file.
+    Logs to .temp/YYYY-MM-DD.txt and optionally to LOGGING_DIR (legacy).
     """
     print("\n" + "="*60)
-    print("🚀 Starting CCCD QR Detector (Production Mode)")
+    print("[PROD] Starting CCCD QR Detector (Production Mode)")
     print("="*60)
-    print(f"🌐 Server: http://{SERVER_HOST}:{SERVER_PORT}")
-    print(f"📍 Redis: {REDIS_URL}")
-    print(f"📝 Logs: {LOGGING_DIR}")
+    print(f"Server: http://{SERVER_HOST}:{SERVER_PORT}")
+    print(f"Redis: {REDIS_URL}")
+    print(f"Logs: {LOGGING_DIR}")
     print("="*60 + "\n")
 
     # Create logs directory if it doesn't exist
@@ -141,6 +155,7 @@ def start_production_env():
     time.sleep(2)
 
     # Start FastAPI server with Uvicorn
+    # Uvicorn logs will use root logger (DailyTextHandler) via propagation
     uvicorn.run(
         fastapi_app,
         host=SERVER_HOST,

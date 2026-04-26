@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 import uuid
+import logging
 
 import cv2
 import numpy as np
@@ -15,6 +16,8 @@ from PIL import Image
 
 from main import detect_cccd_from_image
 from tasks import detect_qr_task
+
+logger = logging.getLogger('service')
 
 
 app = FastAPI(title="detectQRCCCD Service", version="1.0.0")
@@ -88,6 +91,7 @@ async def decode_from_upload(file: UploadFile = File(...)):
 
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
+        logger.info(f"POST /decode/file | file={file.filename} | size={len(raw)} bytes | request_id={request_id}")
         _redis.setex(image_key, IMAGE_TTL, raw)
 
         task = detect_qr_task.delay(image_key)
@@ -108,6 +112,9 @@ async def decode_from_upload(file: UploadFile = File(...)):
         img = _load_image_from_bytes(raw)
         image_url = _save_preview_to_redis(img, request_id)
 
+        detected = result.get('detected', False)
+        logger.info(f"POST /decode/file | request_id={request_id} | detected={detected} | region={result.get('region', 'N/A')}")
+
         return {
             "filename": file.filename,
             "request_id": request_id,
@@ -117,6 +124,7 @@ async def decode_from_upload(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as exc:
+        logger.error(f"POST /decode/file error: {str(exc)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -131,6 +139,7 @@ async def decode_from_path(payload: PathRequest):
 
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
+        logger.info(f"POST /decode/path | path={payload.image_path} | size={len(raw)} bytes | request_id={request_id}")
         _redis.setex(image_key, IMAGE_TTL, raw)
 
         task = detect_qr_task.delay(image_key)
@@ -150,6 +159,9 @@ async def decode_from_path(payload: PathRequest):
 
         image_url = _save_preview_to_redis(img, request_id)
 
+        detected = result.get('detected', False)
+        logger.info(f"POST /decode/path | request_id={request_id} | detected={detected} | region={result.get('region', 'N/A')}")
+
         return {
             "image_path": str(Path(payload.image_path).expanduser().resolve()),
             "request_id": request_id,
@@ -157,6 +169,8 @@ async def decode_from_path(payload: PathRequest):
             **result,
         }
     except FileNotFoundError as exc:
+        logger.error(f"POST /decode/path error: file not found - {str(exc)}", exc_info=True)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
+        logger.error(f"POST /decode/path error: {str(exc)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

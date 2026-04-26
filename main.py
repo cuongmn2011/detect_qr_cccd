@@ -4,12 +4,15 @@ from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Event
 import math
+import logging
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 import zxingcpp
+
+logger = logging.getLogger('main')
 
 register_heif_opener()
 
@@ -52,7 +55,7 @@ def load_image(image_path: Path) -> np.ndarray:
     pil_img = ImageOps.exif_transpose(pil_img)
     img = np.array(pil_img)
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    print(f"[OK] Loaded image: {image_path} | shape={img.shape}")
+    logger.info(f"Loaded image: {image_path} | shape={img.shape}")
     return img
 
 
@@ -110,7 +113,7 @@ def deskew(img: np.ndarray) -> np.ndarray:
     if median_angle is None or abs(median_angle) < 0.5:
         return img
 
-    print(f"  -> Deskew rotation: {median_angle:.2f} degrees")
+    logger.debug(f"Deskew rotation: {median_angle:.2f} degrees")
     matrix = cv2.getRotationMatrix2D((w / 2, h / 2), median_angle, 1.0)
     deskewed = cv2.warpAffine(
         img,
@@ -533,6 +536,7 @@ def try_decode_qr_only(img: np.ndarray) -> list[Any]:
         results = zxingcpp.read_barcodes(img)
         return [r for r in results if "QR" in str(r.format)]
     except Exception as e:
+        logger.debug(f"try_decode_qr_only failed: {type(e).__name__}: {str(e)}")
         return []
 
 
@@ -626,6 +630,7 @@ def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
             return [QRResult(text) for text in results]
         return []
     except Exception as e:
+        logger.debug(f"try_decode_qr_wechat failed: {type(e).__name__}: {str(e)}")
         return []
 
 
