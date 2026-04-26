@@ -297,6 +297,74 @@ curl http://localhost:8000/current-detect-image/{request_id} \
 
 ---
 
+# 📋 Hệ Thống Logging
+
+### Vị Trí Log Files
+
+Tất cả logs được lưu trong thư mục `.temp/` cạnh source code hoặc cạnh file `.exe`:
+
+```
+detect_qr_cccd/
+├── .temp/
+│   ├── celery_20260426.log      # Log file cho ngày 2026-04-26
+│   ├── celery_20260427.log      # Log file cho ngày 2026-04-27
+│   └── ...
+├── run.py
+├── main.py
+└── ...
+```
+
+### Log File Format
+
+Mỗi log file có format:
+```
+[2026-04-26 22:25:33,091: INFO/MainProcess] POST /decode/file | file=CCCD_5.jpg | size=335214 bytes | request_id=abc-123
+[2026-04-26 22:25:33,102: INFO/MainProcess] [detect_qr] task started | image_key=img:abc-123
+[2026-04-26 22:25:47,501: INFO/MainProcess] [detect_qr] task completed | detected=True | duration=14.40s
+```
+
+### Nội Dung Log
+
+**1 file log duy nhất** chứa tất cả logs từ:
+- ✅ FastAPI server (HTTP requests, responses)
+- ✅ Celery worker (task start, completion, errors)
+- ✅ Application code (service.py, tasks.py, main.py)
+
+### Auto-Rotation
+
+Log files tự động rotate theo **từng ngày**:
+- 2026-04-26 → `celery_20260426.log`
+- 2026-04-27 → `celery_20260427.log` (mới)
+- Cũ không bị xóa, chỉ tạo file mới
+
+### Xem Logs
+
+**Windows:**
+```bash
+# Xem real-time
+type .temp\celery_20260426.log
+
+# Hoặc dùng PowerShell
+Get-Content -Path .\.temp\celery_20260426.log -Wait
+```
+
+**Linux/Mac:**
+```bash
+# Xem real-time
+tail -f .temp/celery_20260426.log
+
+# Xem từ đầu
+cat .temp/celery_20260426.log
+```
+
+### Lưu Ý
+
+- Logs viết **thread-safe**: an toàn khi nhiều requests chạy đồng thời
+- File không bị khóa, có thể xem trong khi server chạy
+- Cần giải phóng disk space nếu chạy lâu (logs có thể lớn)
+
+---
+
 # 📋 Định Dạng Ảnh Hỗ Trợ
 
 jpg, jpeg, png, heic, heif, bmp, tif, tiff, webp
