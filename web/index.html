@@ -3,383 +3,1646 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CCCD QR Scanner</title>
+  <title>AI Identity Detector</title>
   <style>
-    :root {
-      --bg: #f4f7fb;
-      --card: #ffffff;
-      --ink: #1a2433;
-      --muted: #637086;
-      --brand: #0f62fe;
-      --ok: #0f9d58;
-      --err: #d93025;
-      --line: #d9e2ef;
-    }
-
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: radial-gradient(circle at 10% 10%, #e8f0ff, var(--bg) 50%);
-      color: var(--ink);
+      background: #f1f5f9;
+      color: #1e293b;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 14px;
     }
 
-    .wrap {
-      width: min(980px, 94vw);
-      margin: 14px auto 22px;
-      display: grid;
-      gap: 18px;
+    /* Header */
+    header {
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 16px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      z-index: 10;
     }
 
-    @media (min-width: 760px) {
-      .wrap {
-        width: min(980px, 92vw);
-        margin: 30px auto;
+    @media (min-width: 768px) {
+      header {
+        padding: 16px 24px;
       }
     }
 
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 8px 20px rgba(21, 38, 71, 0.06);
-    }
-
-    @media (min-width: 760px) {
-      .card { padding: 18px; }
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: 20px;
-    }
-
-    @media (min-width: 760px) {
-      h1 { font-size: 24px; }
-    }
-
-    p {
-      margin: 0;
-      color: var(--muted);
-    }
-
-    .actions {
-      display: grid;
-      gap: 12px;
-      margin-top: 14px;
-      grid-template-columns: 1fr;
-      align-items: start;
-    }
-
-    .file-panel {
-      display: grid;
-      gap: 10px;
-    }
-
-    input[type="file"] {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      background: #fff;
-      width: 100%;
-    }
-
-    button {
-      border: 0;
-      border-radius: 10px;
-      background: var(--brand);
-      color: #fff;
-      font-weight: 600;
-      padding: 10px 14px;
-      cursor: pointer;
-    }
-
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .ghost-btn {
-      background: #eaf1ff;
-      color: #19407a;
-      border: 1px solid #cdddf8;
-    }
-
-    .ghost-btn.copied {
-      background: #e9f8ee;
-      color: #12613a;
-      border: 1px solid #bde7cd;
-    }
-
-    .ghost-btn.copy-failed {
-      background: #fdeeee;
-      color: #8b1d16;
-      border: 1px solid #f2c4c1;
-    }
-
-    .camera-mini {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px;
-      background: #f9fbff;
-      display: grid;
+    .header-logo {
+      display: flex;
+      align-items: center;
       gap: 8px;
+      min-width: 0;
+      flex: 1;
     }
 
-    .camera-mini-title {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
+    @media (min-width: 768px) {
+      .header-logo {
+        gap: 12px;
+      }
     }
 
-    .camera-view {
-      width: 100%;
-      min-height: clamp(180px, 40vw, 320px);
-      background: #101b30;
-      border-radius: 10px;
-      overflow: hidden;
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: #2563eb;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #b9c8e5;
-      font-size: 13px;
-      text-align: center;
+      color: white;
+      box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+      flex-shrink: 0;
     }
 
-    .camera-view video {
-      width: 100%;
+    @media (min-width: 768px) {
+      .logo-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+      }
+    }
+
+    .logo-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (min-width: 768px) {
+      .logo-icon svg {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    .header-text h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #1e293b;
+      white-space: nowrap;
+    }
+
+    @media (min-width: 768px) {
+      .header-text h1 {
+        font-size: 18px;
+      }
+    }
+
+    .header-text p {
+      margin: 1px 0 0;
+      font-size: 7px;
+      font-weight: 400;
+      color: #94a3b8;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    @media (min-width: 768px) {
+      .header-text p {
+        margin: 2px 0 0;
+        font-size: 9px;
+      }
+    }
+
+    .ready-badge {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 6px 12px;
+      border-radius: 9999px;
+    }
+
+    .ready-badge span {
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    @media (min-width: 768px) {
+      .ready-badge { display: flex; }
+    }
+
+    /* Main layout */
+    main {
+      flex: 1;
+      overflow: hidden;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    @media (min-width: 640px) {
+      main {
+        padding: 16px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      main {
+        padding: 24px;
+      }
+    }
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
       height: 100%;
-      object-fit: cover;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+      overflow-y: auto;
+    }
+
+    @media (min-width: 640px) {
+      .grid-layout {
+        gap: 16px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .grid-layout {
+        grid-template-columns: 1fr 2fr;
+        gap: 24px;
+        overflow-y: hidden;
+      }
+    }
+
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    @media (min-width: 640px) {
+      .panel-left {
+        gap: 16px;
+      }
+    }
+
+    .panel-right {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      min-height: 0;
+      min-width: 0;
+      overflow-y: auto;
+    }
+
+    @media (min-width: 640px) {
+      .panel-right {
+        gap: 16px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .panel-right {
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        overflow-y: hidden;
+      }
+    }
+
+    /* Card base */
+    .card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .card-dark {
+      background: #0f172a;
+      border-color: #1e293b;
+    }
+
+    /* Panel header */
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    @media (min-width: 640px) {
+      .panel-header {
+        padding: 16px 20px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .panel-header {
+        padding: 20px;
+      }
+    }
+
+    .card-dark .panel-header {
+      border-bottom-color: rgba(71,85,105,0.5);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #475569;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+
+    @media (min-width: 640px) {
+      .panel-header h2 {
+        font-size: 10px;
+        gap: 8px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .panel-header h2 {
+        font-size: 11px;
+      }
+    }
+
+    .card-dark .panel-header h2 {
+      color: #94a3b8;
+    }
+
+    .panel-header h2 svg {
+      width: 12px;
+      height: 12px;
+      color: #2563eb;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 1024px) {
+      .panel-header h2 svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+    .open-camera-btn {
+      font-size: 8px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #2563eb;
+      background: #eff6ff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+      min-height: 28px;
+    }
+
+    @media (min-width: 640px) {
+      .open-camera-btn {
+        font-size: 9px;
+        padding: 6px 12px;
+        gap: 6px;
+        border-radius: 8px;
+      }
+    }
+
+    .open-camera-btn:hover {
+      background: #bfdbfe;
+    }
+
+    .open-camera-btn svg {
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 640px) {
+      .open-camera-btn svg {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 10px;
+      aspect-ratio: 4 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: all 0.2s;
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      margin: 12px;
+    }
+
+    @media (min-width: 640px) {
+      .drop-zone {
+        border-radius: 12px;
+        margin: 16px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .drop-zone {
+        margin: 20px;
+      }
+    }
+
+    .drop-zone.has-file {
+      border-color: #bfdbfe;
+      background: #f0f9ff;
+    }
+
+    .drop-zone-input {
       display: none;
     }
 
-    .camera-actions {
-      display: grid;
-      gap: 6px;
+    .drop-zone-content {
       width: 100%;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .camera-actions button {
-      padding: 9px 6px;
-      font-size: 13px;
-    }
-
-    .status {
-      margin-top: 10px;
-      font-size: 13px;
-      min-height: 22px;
-      color: var(--muted);
-    }
-
-    @media (min-width: 760px) {
-      .status { font-size: 14px; }
-    }
-
-    .status.ok { color: var(--ok); }
-    .status.err { color: var(--err); }
-
-    .grid {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: 1fr;
-    }
-
-    .grid > * { min-width: 0; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    @media (min-width: 760px) {
-      table { font-size: 14px; }
-    }
-
-    th, td {
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      padding: 8px;
-      vertical-align: top;
-    }
-
-    th {
-      width: 42%;
-      color: var(--muted);
-      font-weight: 600;
-    }
-
-    @media (min-width: 760px) {
-      th { width: 35%; }
-    }
-
-    .image-box {
-      border: 1px dashed var(--line);
-      border-radius: 10px;
-      min-height: clamp(220px, 46vh, 380px);
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
-      background: #fbfdff;
-      color: var(--muted);
-      font-size: 14px;
-      text-align: center;
-      padding: 10px;
+      position: relative;
     }
 
-    .image-box img {
+    /* Empty state */
+    #emptyState {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+      gap: 12px;
+    }
+
+    .upload-icon {
+      width: 44px;
+      height: 44px;
+      background: #eff6ff;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #2563eb;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
+    }
+
+    @media (min-width: 640px) {
+      .upload-icon {
+        width: 56px;
+        height: 56px;
+      }
+    }
+
+    .upload-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (min-width: 640px) {
+      .upload-icon svg {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    #emptyState p:first-of-type {
+      font-size: 12px;
+      font-weight: 900;
+      color: #475569;
+      margin: 0;
+    }
+
+    @media (min-width: 640px) {
+      #emptyState p:first-of-type {
+        font-size: 14px;
+      }
+    }
+
+    #emptyState p:last-of-type {
+      font-size: 10px;
+      color: #94a3b8;
+      margin: 0;
+    }
+
+    @media (min-width: 640px) {
+      #emptyState p:last-of-type {
+        font-size: 11px;
+      }
+    }
+
+    /* Preview state */
+    #previewState {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+    }
+
+    #previewImg {
       max-width: 100%;
-      max-height: clamp(200px, 44vh, 360px);
-      width: auto;
-      height: auto;
+      max-height: 100%;
       object-fit: contain;
-      display: block;
-      border-radius: 8px;
+      padding: 8px;
     }
 
-    .section-head {
+    .hover-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    #previewState:hover .hover-overlay {
+      background: rgba(0,0,0,0.3);
+    }
+
+    .overlay-actions {
+      display: flex;
+      gap: 12px;
+      opacity: 0;
+      transform: scale(0.9);
+      transition: all 0.2s;
+    }
+
+    #previewState:hover .overlay-actions {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .overlay-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 9999px;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    @media (min-width: 640px) {
+      .overlay-btn {
+        width: 48px;
+        height: 48px;
+      }
+    }
+
+    .overlay-btn.zoom {
+      background: white;
+      color: #1e293b;
+    }
+
+    .overlay-btn.zoom:active {
+      background: #2563eb;
+      color: white;
+      transform: scale(0.95);
+    }
+
+    @media (hover: hover) {
+      .overlay-btn.zoom:hover {
+        background: #2563eb;
+        color: white;
+        transform: scale(1.1);
+      }
+    }
+
+    .overlay-btn.delete {
+      background: white;
+      color: #ef4444;
+    }
+
+    .overlay-btn.delete:active {
+      background: #ef4444;
+      color: white;
+      transform: scale(0.95);
+    }
+
+    @media (hover: hover) {
+      .overlay-btn.delete:hover {
+        background: #ef4444;
+        color: white;
+        transform: scale(1.1);
+      }
+    }
+
+    .overlay-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (min-width: 640px) {
+      .overlay-btn svg {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    /* Camera state */
+    #cameraState {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      background: black;
+    }
+
+    #videoEl {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .camera-actions {
+      position: absolute;
+      bottom: 16px;
+      left: 0;
+      right: 0;
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .camera-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 9999px;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    @media (min-width: 640px) {
+      .camera-btn {
+        width: 56px;
+        height: 56px;
+      }
+    }
+
+    .camera-btn.capture {
+      background: white;
+      color: #2563eb;
+      border: 3px solid #bfdbfe;
+      width: 56px;
+      height: 56px;
+    }
+
+    @media (min-width: 640px) {
+      .camera-btn.capture {
+        width: 64px;
+        height: 64px;
+        border: 4px solid #bfdbfe;
+      }
+    }
+
+    .camera-btn.capture:active {
+      transform: scale(0.95);
+    }
+
+    @media (hover: hover) {
+      .camera-btn.capture:hover {
+        transform: scale(1.1);
+      }
+    }
+
+    .camera-btn.stop {
+      background: #ef4444;
+      color: white;
+    }
+
+    .camera-btn.stop:active {
+      transform: scale(0.95);
+    }
+
+    @media (hover: hover) {
+      .camera-btn.stop:hover {
+        transform: scale(1.1);
+      }
+    }
+
+    .camera-btn svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    @media (min-width: 640px) {
+      .camera-btn svg {
+        width: 28px;
+        height: 28px;
+      }
+    }
+
+    #canvasEl {
+      display: none;
+    }
+
+    /* Detect button */
+    #decodeBtn {
+      margin: 0 12px 12px;
+      padding: 12px 16px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-shrink: 0;
+      min-height: 44px;
+    }
+
+    @media (min-width: 640px) {
+      #decodeBtn {
+        margin: 0 16px 16px;
+        padding: 14px;
+        border-radius: 12px;
+        font-size: 11px;
+        gap: 8px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      #decodeBtn {
+        margin: 0 20px 20px;
+        padding: 16px;
+      }
+    }
+
+    #decodeBtn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    @media (hover: hover) {
+      #decodeBtn:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+    }
+
+    #decodeBtn:disabled {
+      background: #f1f5f9;
+      color: #cbd5e1;
+      cursor: not-allowed;
+    }
+
+    #decodeBtn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    @media (min-width: 640px) {
+      #decodeBtn svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    #decodeBtn svg.spin {
+      animation: spin 1s linear infinite;
+    }
+
+    /* Status message */
+    #status {
+      margin: 0 12px 12px;
+      font-size: 11px;
+      min-height: 18px;
+      color: #94a3b8;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    @media (min-width: 640px) {
+      #status {
+        margin: 0 16px 16px;
+        font-size: 13px;
+        min-height: 20px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      #status {
+        margin: 0 20px 20px;
+      }
+    }
+
+    #status.ok {
+      color: #10b981;
+    }
+
+    #status.err {
+      color: #ef4444;
+    }
+
+    /* JSON Panel */
+    .terminal-header {
+      background: rgba(51,65,85,0.4);
+      border-bottom: 1px solid rgba(71,85,105,0.5);
+      padding: 10px 12px;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      margin-bottom: 12px;
+      backdrop-filter: blur(8px);
+      min-height: 44px;
       flex-wrap: wrap;
     }
 
-    pre {
+    @media (min-width: 640px) {
+      .terminal-header {
+        padding: 12px 16px;
+        gap: 12px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .terminal-header {
+        padding: 12px 20px;
+      }
+    }
+
+    .terminal-dots {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 7px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #94a3b8;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+
+    @media (min-width: 640px) {
+      .terminal-dots {
+        gap: 8px;
+        font-size: 8px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .terminal-dots {
+        font-size: 9px;
+      }
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 640px) {
+      .dot {
+        width: 10px;
+        height: 10px;
+      }
+    }
+
+    .dot.red { background: #f87171; }
+    .dot.yellow { background: #fbbf24; }
+    .dot.green { background: #34d399; }
+
+    #jsonOutput {
       margin: 0;
-      border: 1px solid var(--line);
+      padding: 12px;
+      background: #0f172a;
+      color: #34d399;
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      flex: 1;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    @media (min-width: 640px) {
+      #jsonOutput {
+        padding: 16px;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      #jsonOutput {
+        padding: 20px;
+      }
+    }
+
+    /* Copy button */
+    #copyJsonBtn {
+      background: rgba(255,255,255,0.05);
+      color: #94a3b8;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      min-height: 32px;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 640px) {
+      #copyJsonBtn {
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+    }
+
+    #copyJsonBtn:active {
+      transform: scale(0.95);
+    }
+
+    @media (hover: hover) {
+      #copyJsonBtn:hover {
+        color: white;
+        background: rgba(255,255,255,0.1);
+      }
+    }
+
+    #copyJsonBtn svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    @media (min-width: 640px) {
+      #copyJsonBtn svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+    /* Mapped fields panel */
+    .panel-mapped .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .panel-header-label {
+      font-size: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+
+    @media (min-width: 640px) {
+      .panel-header-label {
+        font-size: 10px;
+        gap: 8px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .panel-header-label {
+        font-size: 11px;
+      }
+    }
+
+    .panel-header-label svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 1024px) {
+      .panel-header-label svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+    .matched-badge {
+      display: none;
+      font-size: 8px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #2563eb;
+      background: #eff6ff;
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid #bfdbfe;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 640px) {
+      .matched-badge {
+        font-size: 9px;
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+    }
+
+    .matched-badge.show {
+      display: inline-block;
+    }
+
+    #mappedFields {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      display: grid;
+      gap: 12px;
+    }
+
+    @media (min-width: 640px) {
+      #mappedFields {
+        padding: 16px;
+        gap: 14px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      #mappedFields {
+        padding: 20px;
+        gap: 16px;
+      }
+    }
+
+    .field-card {
+      animation: slideInRight 0.3s ease-out;
+    }
+
+    @keyframes slideInRight {
+      from {
+        transform: translateX(1rem);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .field-label {
+      font-size: 8px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #94a3b8;
+      margin-bottom: 3px;
+      display: block;
+    }
+
+    @media (min-width: 640px) {
+      .field-label {
+        font-size: 9px;
+        margin-bottom: 4px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .field-label {
+        font-size: 9px;
+      }
+    }
+
+    .field-value {
+      min-height: 40px;
+      padding: 10px 12px;
       border-radius: 10px;
-      background: #0b1324;
-      color: #d9e7ff;
+      border: 1px solid #e2e8f0;
       font-size: 12px;
-      overflow: auto;
-      max-height: 52vh;
+      background: #f8fafc;
+      color: #94a3b8;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    @media (min-width: 640px) {
+      .field-value {
+        min-height: 44px;
+        padding: 11px 14px;
+        border-radius: 11px;
+        font-size: 13px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .field-value {
+        min-height: 46px;
+        padding: 12px 16px;
+        border-radius: 12px;
+      }
+    }
+
+    .field-value.has-value {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1e293b;
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    /* Zoom modal */
+    .zoom-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0,0,0,0.95);
+      backdrop-filter: blur(8px);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       padding: 12px;
     }
 
-    @media (min-width: 760px) {
-      pre {
-        font-size: 13px;
-        max-height: 460px;
+    @media (min-width: 640px) {
+      .zoom-modal {
+        padding: 20px;
+      }
+    }
+
+    .zoom-modal.show {
+      display: flex;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 6px 12px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 1010;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    @media (min-width: 640px) {
+      .zoom-controls {
+        top: 24px;
+        padding: 8px 16px;
+        gap: 12px;
+      }
+    }
+
+    .zoom-controls button {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s;
+      min-height: 32px;
+      min-width: 32px;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-controls button {
+        padding: 8px;
+        min-height: 40px;
+        min-width: 40px;
+      }
+    }
+
+    .zoom-controls button:active {
+      opacity: 0.7;
+    }
+
+    @media (hover: hover) {
+      .zoom-controls button:hover {
+        color: #3b82f6;
+      }
+    }
+
+    .zoom-controls button svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-controls button svg {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    .zoom-percent {
+      color: white;
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: 900;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-percent {
+        font-size: 12px;
+        min-width: 60px;
+      }
+    }
+
+    .zoom-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255,255,255,0.2);
+    }
+
+    @media (min-width: 640px) {
+      .zoom-divider {
+        height: 24px;
+      }
+    }
+
+    .zoom-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 1010;
+      min-height: 40px;
+      min-width: 40px;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-close {
+        top: 24px;
+        right: 24px;
+        padding: 12px;
+      }
+    }
+
+    .zoom-close:active {
+      background: rgba(255,0,0,0.3);
+      color: #ff6b6b;
+    }
+
+    @media (hover: hover) {
+      .zoom-close:hover {
+        background: rgba(255,0,0,0.3);
+        color: #ff6b6b;
+      }
+    }
+
+    .zoom-close svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-close svg {
+        width: 28px;
+        height: 28px;
+      }
+    }
+
+    .zoom-image-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      padding: 0 12px;
+    }
+
+    @media (min-width: 640px) {
+      .zoom-image-container {
+        padding: 0 20px;
+      }
+    }
+
+    .zoom-image {
+      max-width: none;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    @media (min-width: 640px) {
+      .zoom-image {
+        border-radius: 8px;
+      }
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    @media (min-width: 640px) {
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 10px;
+    }
+
+    .card-dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+
+    /* Touch-friendly interaction */
+    @media (hover: none) {
+      button {
+        padding: max(var(--current-padding), 12px);
       }
     }
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <section class="card">
-      <h1>CCCD QR Scanner</h1>
-      <p>Upload or capture a CCCD image to extract and decode its QR data.</p>
+  <!-- Zoom Modal -->
+  <div id="zoomModal" class="zoom-modal">
+    <div class="zoom-controls">
+      <button id="zoomOutBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="M21 21l-4.35-4.35"></path>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+      <span class="zoom-percent" id="zoomPercent">100%</span>
+      <button id="zoomInBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="M21 21l-4.35-4.35"></path>
+          <line x1="11" y1="8" x2="11" y2="14"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+      <div class="zoom-divider"></div>
+      <button id="rotateBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 4v6h6"></path>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+        </svg>
+      </button>
+    </div>
+    <button class="zoom-close" id="zoomCloseBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div class="zoom-image-container">
+      <img id="zoomImage" class="zoom-image" alt="Zoomed" />
+    </div>
+  </div>
 
-      <div class="actions">
-        <div class="file-panel">
-          <input id="fileInput" type="file" accept="image/*" />
-          <button id="decodeBtn" type="button">Decode Image</button>
+  <!-- Header -->
+  <header>
+    <div class="header-logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="M21 21l-4.35-4.35"></path>
+        </svg>
+      </div>
+      <div class="header-text">
+        <h1>AI Identity Detector</h1>
+        <p>Hệ thống của Cường</p>
+      </div>
+    </div>
+    <div class="ready-badge">
+      <span></span>
+      READY
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+    <div class="grid-layout">
+
+      <!-- Left Panel: Upload & Detect -->
+      <section class="panel-left card">
+        <div class="panel-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Dữ liệu đầu vào
+          </h2>
+          <button id="openCameraBtn" class="open-camera-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            Mở Camera
+          </button>
         </div>
 
-        <div class="camera-mini">
-          <div class="camera-mini-title">Quick Camera</div>
-          <div id="cameraView" class="camera-view">
-            <video id="cameraVideo" autoplay playsinline></video>
-            <span id="cameraPlaceholder">Preview</span>
-          </div>
-          <div class="camera-actions">
-            <button id="startCamBtn" type="button">Start</button>
-            <button id="captureBtn" type="button" disabled>Capture</button>
-            <button id="stopCamBtn" type="button" disabled>Stop</button>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept="image/*" class="drop-zone-input" />
+          <div class="drop-zone-content">
+            <!-- Empty state -->
+            <div id="emptyState">
+              <div class="upload-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              </div>
+              <p>Click tải hình ảnh</p>
+              <p>Hoặc sử dụng Camera</p>
+            </div>
+
+            <!-- Preview state -->
+            <div id="previewState" hidden>
+              <img id="previewImg" alt="Preview" />
+              <div class="hover-overlay">
+                <div class="overlay-actions">
+                  <button id="zoomBtn" class="overlay-btn zoom">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <polyline points="9 21 3 21 3 15"></polyline>
+                      <line x1="21" y1="3" x2="10.5" y2="13.5"></line>
+                      <line x1="3" y1="21" x2="13.5" y2="10.5"></line>
+                    </svg>
+                  </button>
+                  <button id="deleteBtn" class="overlay-btn delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      <line x1="10" y1="11" x2="10" y2="17"></line>
+                      <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Camera state -->
+            <div id="cameraState" hidden>
+              <video id="videoEl" autoplay playsinline></video>
+              <div class="camera-actions">
+                <button id="captureBtn" class="camera-btn capture">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                </button>
+                <button id="stopCameraBtn" class="camera-btn stop">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+              <canvas id="canvasEl"></canvas>
+            </div>
           </div>
         </div>
+
+        <button id="decodeBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="M21 21l-4.35-4.35"></path>
+          </svg>
+          BẮT ĐẦU DETECT
+        </button>
+
+        <div id="status"></div>
+      </section>
+
+      <!-- Right Panel: JSON & Mapped Fields -->
+      <div class="panel-right">
+
+        <!-- JSON Panel -->
+        <section class="card card-dark">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+              <span>JSON Results</span>
+            </div>
+            <button id="copyJsonBtn" style="display: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+              </svg>
+            </button>
+          </div>
+          <pre id="jsonOutput"></pre>
+        </section>
+
+        <!-- Mapped Fields Panel -->
+        <section class="card">
+          <div class="panel-header">
+            <div class="panel-header-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              Dữ liệu ánh xạ
+            </div>
+            <div class="matched-badge" id="matchedBadge">Matched</div>
+          </div>
+          <div id="mappedFields"></div>
+        </section>
       </div>
 
-      <div id="status" class="status">Ready.</div>
-    </section>
-
-    <section class="grid">
-      <article class="card">
-        <h1 style="font-size: 18px; margin-bottom: 12px;">Detection Result</h1>
-
-        <h1 style="font-size: 16px; margin-bottom: 10px;">Mapped Fields</h1>
-        <table>
-          <tbody id="mappedBody">
-            <tr><td colspan="2" style="color: var(--muted);">No result yet.</td></tr>
-          </tbody>
-        </table>
-
-        <h1 style="font-size: 16px; margin: 14px 0 10px;">Current Detect Image</h1>
-        <div id="imageBox" class="image-box">No image selected.</div>
-      </article>
-
-      <article class="card">
-        <div class="section-head">
-          <h1 style="font-size: 18px; margin: 0;">Raw JSON</h1>
-          <button id="copyJsonBtn" class="ghost-btn" type="button">Copy JSON</button>
-        </div>
-        <pre id="jsonOutput">{}</pre>
-      </article>
-    </section>
+    </div>
   </main>
 
   <script>
     const fileInput = document.getElementById("fileInput");
     const decodeBtn = document.getElementById("decodeBtn");
-    const startCamBtn = document.getElementById("startCamBtn");
+    const openCameraBtn = document.getElementById("openCameraBtn");
     const captureBtn = document.getElementById("captureBtn");
-    const stopCamBtn = document.getElementById("stopCamBtn");
-    const cameraVideo = document.getElementById("cameraVideo");
-    const cameraPlaceholder = document.getElementById("cameraPlaceholder");
+    const stopCameraBtn = document.getElementById("stopCameraBtn");
+    const videoEl = document.getElementById("videoEl");
+    const canvasEl = document.getElementById("canvasEl");
     const statusEl = document.getElementById("status");
     const jsonOutput = document.getElementById("jsonOutput");
     const copyJsonBtn = document.getElementById("copyJsonBtn");
-    const mappedBody = document.getElementById("mappedBody");
-    const imageBox = document.getElementById("imageBox");
+    const mappedFields = document.getElementById("mappedFields");
+    const dropZone = document.getElementById("dropZone");
+    const emptyState = document.getElementById("emptyState");
+    const previewState = document.getElementById("previewState");
+    const previewImg = document.getElementById("previewImg");
+    const cameraState = document.getElementById("cameraState");
+    const zoomBtn = document.getElementById("zoomBtn");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const zoomModal = document.getElementById("zoomModal");
+    const zoomImage = document.getElementById("zoomImage");
+    const zoomCloseBtn = document.getElementById("zoomCloseBtn");
+    const zoomInBtn = document.getElementById("zoomInBtn");
+    const zoomOutBtn = document.getElementById("zoomOutBtn");
+    const rotateBtn = document.getElementById("rotateBtn");
+    const zoomPercent = document.getElementById("zoomPercent");
+    const matchedBadge = document.getElementById("matchedBadge");
 
     let cameraStream = null;
     let capturedFile = null;
     let copyBtnTimer = null;
+    let zoomScale = 1;
+    let zoomRotation = 0;
+
+    function updateDecodeButtonState() {
+      const hasFile = capturedFile || (fileInput.files && fileInput.files[0]);
+      decodeBtn.disabled = !hasFile;
+    }
 
     function setStatus(text, mode = "") {
       statusEl.textContent = text;
-      statusEl.className = `status ${mode}`.trim();
+      statusEl.className = mode;
     }
 
     function renderMapped(mapped) {
       const entries = Object.entries(mapped || {});
       if (entries.length === 0) {
-        mappedBody.innerHTML = '<tr><td colspan="2" style="color: var(--muted);">No mapped fields.</td></tr>';
+        mappedFields.innerHTML = "";
         return;
       }
 
-      mappedBody.innerHTML = entries
-        .map(([key, value]) => `<tr><th>${key}</th><td>${value || ""}</td></tr>`)
+      mappedFields.innerHTML = entries
+        .map(([key, value], idx) => {
+          const hasValue = value ? "has-value" : "";
+          return `
+            <div class="field-card" style="animation-delay: ${idx * 40}ms;">
+              <label class="field-label">${key}</label>
+              <div class="field-value ${hasValue}">${value || "---"}</div>
+            </div>
+          `;
+        })
         .join("");
-    }
-
-    function renderCurrentImage(url) {
-      if (!url) {
-        imageBox.textContent = "No image selected.";
-        return;
-      }
-      imageBox.innerHTML = `<img src="${url}" alt="Current detect image" />`;
     }
 
     function clearCurrentResult() {
       renderMapped({});
-      renderCurrentImage("");
-      jsonOutput.textContent = "{}";
-      setStatus("Ready.");
+      jsonOutput.textContent = "";
+      zoomModal.classList.remove("show");
+      setStatus("");
+      matchedBadge.classList.remove("show");
+      copyJsonBtn.style.display = "none";
     }
 
     function updateCameraUi(hasStream) {
-      captureBtn.disabled = !hasStream;
-      stopCamBtn.disabled = !hasStream;
-      startCamBtn.disabled = hasStream;
-      cameraVideo.style.display = hasStream ? "block" : "none";
-      cameraPlaceholder.style.display = hasStream ? "none" : "inline";
+      openCameraBtn.style.display = hasStream ? "none" : "block";
     }
 
     function stopCamera() {
@@ -387,8 +1650,15 @@
         cameraStream.getTracks().forEach((track) => track.stop());
         cameraStream = null;
       }
-      cameraVideo.srcObject = null;
+      videoEl.srcObject = null;
       updateCameraUi(false);
+    }
+
+    function hideCameraMode() {
+      cameraState.hidden = true;
+      emptyState.hidden = false;
+      previewState.hidden = true;
+      dropZone.classList.remove("has-file");
     }
 
     async function startCamera() {
@@ -398,8 +1668,12 @@
           video: { facingMode: "environment" },
           audio: false,
         });
-        cameraVideo.srcObject = cameraStream;
+        videoEl.srcObject = cameraStream;
         updateCameraUi(true);
+        emptyState.hidden = true;
+        previewState.hidden = true;
+        cameraState.hidden = false;
+        dropZone.classList.add("has-file");
         setStatus("Camera is ready. Click Capture.");
       } catch (error) {
         stopCamera();
@@ -413,24 +1687,23 @@
         return;
       }
 
-      const width = cameraVideo.videoWidth;
-      const height = cameraVideo.videoHeight;
+      const width = videoEl.videoWidth;
+      const height = videoEl.videoHeight;
       if (!width || !height) {
         setStatus("Camera stream is not ready yet.", "err");
         return;
       }
 
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
+      canvasEl.width = width;
+      canvasEl.height = height;
+      const ctx = canvasEl.getContext("2d");
       if (!ctx) {
         setStatus("Cannot capture photo from camera.", "err");
         return;
       }
-      ctx.drawImage(cameraVideo, 0, 0, width, height);
+      ctx.drawImage(videoEl, 0, 0, width, height);
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+      const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.95));
       if (!blob) {
         setStatus("Cannot capture photo from camera.", "err");
         return;
@@ -439,7 +1712,16 @@
       capturedFile = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
       fileInput.value = "";
       clearCurrentResult();
-      setStatus("Photo captured. Click Decode Image.", "ok");
+
+      const dataUrl = URL.createObjectURL(blob);
+      previewImg.src = dataUrl;
+      hideCameraMode();
+      emptyState.hidden = true;
+      previewState.hidden = false;
+      previewImg.onload = () => URL.revokeObjectURL(dataUrl);
+
+      setStatus("Photo captured. Click Detect Image.", "ok");
+      updateDecodeButtonState();
     }
 
     async function decodeImage() {
@@ -453,8 +1735,10 @@
       formData.append("file", file);
 
       decodeBtn.disabled = true;
+      const originalText = decodeBtn.innerHTML;
+      decodeBtn.innerHTML = '<svg style="animation: spin 1s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"></path><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>ĐANG XỬ LÝ...';
       clearCurrentResult();
-      setStatus("Uploading and decoding image...", "");
+      setStatus("Uploading and decoding image...");
 
       try {
         const response = await fetch("/decode/file", {
@@ -467,13 +1751,17 @@
 
         if (!response.ok) {
           renderMapped({});
-          renderCurrentImage("");
           setStatus(`Request failed: ${data.detail || response.statusText}`, "err");
           return;
         }
 
         renderMapped(data.mapped || {});
-        renderCurrentImage(data.current_image_url || "");
+        if (data.current_image_url) {
+          zoomImage.src = data.current_image_url;
+          copyJsonBtn.style.display = "flex";
+          matchedBadge.classList.add("show");
+        }
+
         if (data.detected) {
           setStatus("Decode successful.", "ok");
         } else {
@@ -481,11 +1769,11 @@
         }
       } catch (error) {
         renderMapped({});
-        renderCurrentImage("");
         jsonOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
         setStatus("Cannot connect to API service.", "err");
       } finally {
         decodeBtn.disabled = false;
+        decodeBtn.innerHTML = originalText;
       }
     }
 
@@ -496,43 +1784,119 @@
         if (copyBtnTimer) {
           clearTimeout(copyBtnTimer);
         }
-        copyJsonBtn.textContent = "Copied!";
-        copyJsonBtn.classList.remove("copy-failed");
-        copyJsonBtn.classList.add("copied");
+        const originalHtml = copyJsonBtn.innerHTML;
+        copyJsonBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
         copyBtnTimer = setTimeout(() => {
-          copyJsonBtn.textContent = "Copy JSON";
-          copyJsonBtn.classList.remove("copied");
+          copyJsonBtn.innerHTML = originalHtml;
         }, 1800);
         setStatus("Raw JSON copied to clipboard.", "ok");
       } catch (error) {
         if (copyBtnTimer) {
           clearTimeout(copyBtnTimer);
         }
-        copyJsonBtn.textContent = "Copy Failed";
-        copyJsonBtn.classList.remove("copied");
-        copyJsonBtn.classList.add("copy-failed");
+        const originalHtml = copyJsonBtn.innerHTML;
+        copyJsonBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>';
         copyBtnTimer = setTimeout(() => {
-          copyJsonBtn.textContent = "Copy JSON";
-          copyJsonBtn.classList.remove("copy-failed");
+          copyJsonBtn.innerHTML = originalHtml;
         }, 2200);
         setStatus("Cannot copy JSON automatically. Please copy manually.", "err");
       }
     }
 
+    function openZoomModal() {
+      zoomScale = 1;
+      zoomRotation = 0;
+      updateZoomDisplay();
+      zoomModal.classList.add("show");
+    }
+
+    function closeZoomModal() {
+      zoomModal.classList.remove("show");
+      zoomScale = 1;
+      zoomRotation = 0;
+    }
+
+    function zoomIn() {
+      zoomScale = Math.min(zoomScale + 0.2, 3);
+      updateZoomDisplay();
+    }
+
+    function zoomOut() {
+      zoomScale = Math.max(zoomScale - 0.2, 0.5);
+      updateZoomDisplay();
+    }
+
+    function rotate() {
+      zoomRotation = (zoomRotation + 90) % 360;
+      updateZoomDisplay();
+    }
+
+    function updateZoomDisplay() {
+      zoomPercent.textContent = Math.round(zoomScale * 100) + "%";
+      zoomImage.style.transform = `scale(${zoomScale}) rotate(${zoomRotation}deg)`;
+      zoomImage.style.transformOrigin = "center";
+      zoomImage.style.transition = "transform 0.2s cubic-bezier(0.2, 0, 0.2, 1)";
+    }
+
+    // Event listeners
     fileInput.addEventListener("change", () => {
       capturedFile = null;
-      clearCurrentResult();
+      const file = fileInput.files && fileInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          previewImg.src = e.target.result;
+          zoomImage.src = e.target.result;
+          clearCurrentResult();
+          hideCameraMode();
+          emptyState.hidden = true;
+          previewState.hidden = false;
+          dropZone.classList.add("has-file");
+          updateDecodeButtonState();
+        };
+        reader.readAsDataURL(file);
+      }
+      updateDecodeButtonState();
     });
-    startCamBtn.addEventListener("click", startCamera);
+
+    dropZone.addEventListener("click", () => {
+      if (emptyState.hidden === false) {
+        fileInput.click();
+      }
+    });
+
+    openCameraBtn.addEventListener("click", startCamera);
     captureBtn.addEventListener("click", capturePhoto);
-    stopCamBtn.addEventListener("click", () => {
+    stopCameraBtn.addEventListener("click", () => {
       stopCamera();
+      hideCameraMode();
       setStatus("Camera stopped.");
     });
+    zoomBtn.addEventListener("click", openZoomModal);
+    deleteBtn.addEventListener("click", () => {
+      capturedFile = null;
+      fileInput.value = "";
+      clearCurrentResult();
+      hideCameraMode();
+      emptyState.hidden = false;
+      previewState.hidden = true;
+      dropZone.classList.remove("has-file");
+      setStatus("");
+      updateDecodeButtonState();
+    });
+    zoomCloseBtn.addEventListener("click", closeZoomModal);
+    zoomInBtn.addEventListener("click", zoomIn);
+    zoomOutBtn.addEventListener("click", zoomOut);
+    rotateBtn.addEventListener("click", rotate);
+
     window.addEventListener("beforeunload", stopCamera);
     updateCameraUi(false);
     decodeBtn.addEventListener("click", decodeImage);
     copyJsonBtn.addEventListener("click", copyRawJson);
+
+    // Initialize
+    hideCameraMode();
+    updateDecodeButtonState();
   </script>
 </body>
 </html>
