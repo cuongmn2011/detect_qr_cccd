@@ -12,9 +12,8 @@ def get_module_path(module_name):
 
 block_cipher = None
 
-# Get base directory (where this spec file is located)
-import os
-spec_dir = os.path.dirname(os.path.abspath(__file__))
+# Get base directory - use cwd since PyInstaller doesn't set __file__
+spec_dir = os.getcwd()
 
 # Get paths for packages
 celery_path = get_module_path('celery')
