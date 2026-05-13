@@ -1785,7 +1785,7 @@
       }
       ctx.drawImage(videoEl, 0, 0, width, height);
 
-      const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.95));
+      const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.98));
       if (!blob) {
         setStatus("Cannot capture photo from camera.", "err");
         return;
