@@ -9,7 +9,7 @@ import logging
 import cv2
 import numpy as np
 import redis as redis_lib
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
@@ -103,7 +103,7 @@ def current_detect_image(request_id: str):
 
 
 @app.post("/decode/file")
-async def decode_from_upload(file: UploadFile = File(...)):
+async def decode_from_upload(file: UploadFile = File(...), detect_mode: str = Query("deep", regex="^(fast|deep)$")):
     try:
         raw = await file.read()
         if not raw:
@@ -111,7 +111,7 @@ async def decode_from_upload(file: UploadFile = File(...)):
 
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
-        logger.info(f"POST /decode/file | file={file.filename} | size={len(raw)} bytes | request_id={request_id}")
+        logger.info(f"POST /decode/file | file={file.filename} | size={len(raw)} bytes | request_id={request_id} | detect_mode={detect_mode}")
 
         try:
             _redis.setex(image_key, IMAGE_TTL, raw)
@@ -120,7 +120,7 @@ async def decode_from_upload(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail="Server error: failed to process request") from e
 
         try:
-            task = detect_qr_task.delay(image_key)
+            task = detect_qr_task.delay(image_key, detect_mode=detect_mode)
         except Exception as e:
             logger.error(f"Failed to create Celery task: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Server error: detection service unavailable") from e
@@ -162,17 +162,17 @@ async def decode_from_upload(file: UploadFile = File(...)):
 
 
 @app.post("/decode/path")
-async def decode_from_path(payload: PathRequest):
+async def decode_from_path(payload: PathRequest, detect_mode: str = Query("deep", regex="^(fast|deep)$")):
     try:
         img = _load_image_from_path(payload.image_path)
-        success, encoded = cv2.imencode(".jpg", img)
+        success, encoded = cv2.imencode(".png", img)
         if not success:
             raise RuntimeError("Cannot encode image")
         raw = encoded.tobytes()
 
         request_id = str(uuid.uuid4())
         image_key = f"img:{request_id}"
-        logger.info(f"POST /decode/path | path={payload.image_path} | size={len(raw)} bytes | request_id={request_id}")
+        logger.info(f"POST /decode/path | path={payload.image_path} | size={len(raw)} bytes | request_id={request_id} | detect_mode={detect_mode}")
 
         try:
             _redis.setex(image_key, IMAGE_TTL, raw)
@@ -181,7 +181,7 @@ async def decode_from_path(payload: PathRequest):
             raise HTTPException(status_code=500, detail="Server error: failed to process request") from e
 
         try:
-            task = detect_qr_task.delay(image_key)
+            task = detect_qr_task.delay(image_key, detect_mode=detect_mode)
         except Exception as e:
             logger.error(f"Failed to create Celery task: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Server error: detection service unavailable") from e

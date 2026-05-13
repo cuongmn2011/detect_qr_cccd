@@ -16,6 +16,11 @@ REDIS_DB = os.getenv("REDIS_DB", "10")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 os.environ["REDIS_URL"] = REDIS_URL
 
+# ============================================================================
+# Set WeChat QRCode model directory (models are already checked in to git)
+# ============================================================================
+from model_loader import get_model_dir
+os.environ["WECHAT_MODEL_DIR"] = str(get_model_dir())
 
 import uvicorn
 from celery_app import celery
@@ -27,7 +32,7 @@ from service import app as fastapi_app
 # ============================================================================
 
 # Server configuration
-SERVER_HOST = os.getenv("SERVER_HOST", "192.168.222.49")  # "0.0.0.0" for remote access
+SERVER_HOST = os.getenv("SERVER_HOST", "127.0.0.1")  # "0.0.0.0" for remote access
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8000"))
 
 # Logging configuration
