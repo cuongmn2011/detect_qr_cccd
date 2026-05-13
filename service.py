@@ -103,7 +103,7 @@ def current_detect_image(request_id: str):
 
 
 @app.post("/decode/file")
-async def decode_from_upload(file: UploadFile = File(...), detect_mode: str = Query("fast", regex="^(fast|deep)$")):
+async def decode_from_upload(file: UploadFile = File(...), detect_mode: str = Query("deep", regex="^(fast|deep)$")):
     try:
         raw = await file.read()
         if not raw:

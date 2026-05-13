@@ -638,6 +638,14 @@ def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
         if h < 20 or w < 20:
             return []
 
+        # Upscale small images for better WeChat detection
+        # WeChat works better with larger images
+        min_dim = min(h, w)
+        if min_dim < 300:
+            scale = max(2, 300 // min_dim + 1)
+            img = cv2.resize(img, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+            logger.info(f"[WeChat] Upscaled small image {h}x{w} by {scale}x -> {img.shape}")
+
         # WeChat detector returns (decoded_text, confidence_scores)
         results, _ = detector.detectAndDecode(img)
         logger.warning(f"[WeChat] detectAndDecode returned: {len(results)} results")
