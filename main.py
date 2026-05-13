@@ -19,14 +19,22 @@ register_heif_opener()
 # Initialize WeChat QRCode detector (Deep Learning based)
 def _init_wechat():
     try:
+        # Try environment variable first, then fallback to model_loader
         model_dir = os.environ.get("WECHAT_MODEL_DIR", "")
+        if not model_dir:
+            try:
+                from model_loader import get_model_dir
+                model_dir = str(get_model_dir())
+            except ImportError:
+                model_dir = ""
+
         if model_dir:
             from pathlib import Path as _P
             md = _P(model_dir)
             paths = [str(md / f) for f in ["detect.prototxt", "detect.caffemodel", "sr.prototxt", "sr.caffemodel"]]
             if all(os.path.isfile(p) for p in paths):
                 det = cv2.wechat_qrcode.WeChatQRCode(*paths)
-                logger.info("[WeChat] Initialized WITH model files (ML mode)")
+                logger.info(f"[WeChat] Initialized WITH model files from {model_dir} (ML mode)")
                 return det, True
         det = cv2.wechat_qrcode.WeChatQRCode()
         logger.info("[WeChat] Initialized WITHOUT model files (basic mode)")
