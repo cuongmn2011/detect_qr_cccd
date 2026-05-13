@@ -37,3 +37,6 @@ logs/
 
 # PyInstaller backups
 *.spec.bak
+
+# Test images and assets
+asset/
