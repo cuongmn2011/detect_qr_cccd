@@ -12,7 +12,11 @@ def _base_dir() -> Path:
 
 def get_model_dir() -> Path:
     """Return path to models/wechat_qrcode directory."""
-    return _base_dir() / "models" / "wechat_qrcode"
+    path = _base_dir() / "models" / "wechat_qrcode"
+    import sys
+    if getattr(sys, "frozen", False):
+        print(f"[model_loader] EXE mode: base_dir={_base_dir()} -> model_dir={path}")
+    return path
 
 
 def models_available() -> bool:

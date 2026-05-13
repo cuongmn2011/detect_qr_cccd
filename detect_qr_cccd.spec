@@ -12,17 +12,21 @@ def get_module_path(module_name):
 
 block_cipher = None
 
+# Get base directory (where this spec file is located)
+import os
+spec_dir = os.path.dirname(os.path.abspath(__file__))
+
 # Get paths for packages
 celery_path = get_module_path('celery')
 kombu_path = get_module_path('kombu')
 billiard_path = get_module_path('billiard')
 vine_path = get_module_path('vine')
 
-# Build datas list
+# Build datas list using relative paths from spec directory
 datas = [
-    ('d:/Acacy/detect_qr_cccd/web', 'web/'),
-    ('d:/Acacy/detect_qr_cccd/asset', 'asset/'),
-    ('d:/Acacy/detect_qr_cccd/models', 'models/'),  # WeChat QRCode model files (CRITICAL for ML mode)
+    (os.path.join(spec_dir, 'web'), 'web/'),
+    (os.path.join(spec_dir, 'asset'), 'asset/'),
+    (os.path.join(spec_dir, 'models'), 'models/'),  # WeChat QRCode model files (CRITICAL for ML mode)
 ]
 
 # Add packages if found
