@@ -8,3 +8,6 @@ uvicorn[standard]
 python-multipart
 celery[redis]>=5.3
 redis>=5.0
+
+# Note: WeChat QRCode model files are pre-downloaded and stored in models/wechat_qrcode/
+# If models are missing, run: python -c "..." (see PLAN_OPENCV_QRCHAT.md Step 1)

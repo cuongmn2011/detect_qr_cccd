@@ -1,3 +1,4 @@
+import os
 import argparse
 import logging
 from pathlib import Path
@@ -16,12 +17,33 @@ logger = logging.getLogger('main')
 register_heif_opener()
 
 # Initialize WeChat QRCode detector (Deep Learning based)
-try:
-    detector = cv2.wechat_qrcode.WeChatQRCode()
-    WECHAT_AVAILABLE = True
-except (AttributeError, cv2.error):
-    detector = None
-    WECHAT_AVAILABLE = False
+def _init_wechat():
+    try:
+        # Try environment variable first, then fallback to model_loader
+        model_dir = os.environ.get("WECHAT_MODEL_DIR", "")
+        if not model_dir:
+            try:
+                from model_loader import get_model_dir
+                model_dir = str(get_model_dir())
+            except ImportError:
+                model_dir = ""
+
+        if model_dir:
+            from pathlib import Path as _P
+            md = _P(model_dir)
+            paths = [str(md / f) for f in ["detect.prototxt", "detect.caffemodel", "sr.prototxt", "sr.caffemodel"]]
+            if all(os.path.isfile(p) for p in paths):
+                det = cv2.wechat_qrcode.WeChatQRCode(*paths)
+                logger.info(f"[WeChat] Initialized WITH model files from {model_dir} (ML mode)")
+                return det, True
+        det = cv2.wechat_qrcode.WeChatQRCode()
+        logger.info("[WeChat] Initialized WITHOUT model files (basic mode)")
+        return det, True
+    except (AttributeError, cv2.error) as e:
+        logger.warning(f"[WeChat] Not available: {e}")
+        return None, False
+
+detector, WECHAT_AVAILABLE = _init_wechat()
 
 # Tier 1: Cache CLAHE objects at module level (created once, reused for all crops)
 _CLAHE_30 = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
@@ -611,13 +633,22 @@ def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
         return []
 
     try:
-        # Ensure image is BGR and not too small/large
+        # Ensure image is BGR and not too small
         h, w = img.shape[:2]
-        if h < 20 or w < 20 or h > 2000 or w > 2000:
+        if h < 20 or w < 20:
             return []
+
+        # Upscale small images for better WeChat detection
+        # WeChat works better with larger images
+        min_dim = min(h, w)
+        if min_dim < 300:
+            scale = max(2, 300 // min_dim + 1)
+            img = cv2.resize(img, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+            logger.info(f"[WeChat] Upscaled small image {h}x{w} by {scale}x -> {img.shape}")
 
         # WeChat detector returns (decoded_text, confidence_scores)
         results, _ = detector.detectAndDecode(img)
+        logger.warning(f"[WeChat] detectAndDecode returned: {len(results)} results")
 
         # Wrap results in a format compatible with our parsing
         if results:
@@ -626,7 +657,9 @@ def try_decode_qr_wechat(img: np.ndarray) -> list[Any]:
                     self.text = text
                     self.format = "QR_CODE"
 
-            return [QRResult(text) for text in results]
+            qr_list = [QRResult(text) for text in results]
+            logger.warning(f"[WeChat] Created {len(qr_list)} QRResult objects")
+            return qr_list
         return []
     except Exception as e:
         logger.debug(f"try_decode_qr_wechat failed: {type(e).__name__}: {str(e)}")
@@ -677,7 +710,7 @@ def print_cccd_qr_data(raw_data: str) -> None:
     print("-" * 40)
 
 
-def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> dict[str, Any]:
+def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None, detect_mode: str = "fast") -> dict[str, Any]:
     """Detect and decode CCCD QR data from a single image.
 
     Strategy: Try WeChat QRCode (Deep Learning, handles patterns/distortion better)
@@ -687,6 +720,8 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
     Args:
         img: Input image as a BGR ndarray.
         debug_dir: Optional directory to save debug images of variants.
+        detect_mode: "fast" (Strategy 1 only) or "deep" (Strategy 1 + Strategy 2)
+                     Default: "deep" for backward compatibility
 
     Returns:
         A dictionary with detection status and decoded content:
@@ -712,9 +747,11 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
 
     try:
         # Strategy 1: Try WeChat QRCode on full image (automatic region detection)
+        logger.warning(f"[detect_cccd] WECHAT_AVAILABLE={WECHAT_AVAILABLE}, detect_mode={detect_mode}")
         if WECHAT_AVAILABLE:
             try:
                 qr_results = try_decode_qr_wechat(img)
+                logger.warning(f"[detect_cccd] try_decode_qr_wechat returned {len(qr_results)} results")
                 if qr_results:
                     result = qr_results[0]
                     parsed = parse_cccd_fields(result.text)
@@ -728,6 +765,17 @@ def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None) -> di
                     }
             except Exception as e:
                 logger.warning(f"WeChat QRCode detection failed: {str(e)}")
+
+        # Early return if fast mode (no fallback to Strategy 2)
+        if detect_mode == "fast":
+            return {
+                "detected": False,
+                "region": None,
+                "variant": None,
+                "raw_data": None,
+                "fields": [],
+                "mapped": {},
+            }
 
         # Strategy 2: Fall back to region-based preprocessing with zxingcpp
         try:

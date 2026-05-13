@@ -368,6 +368,75 @@
       }
     }
 
+    .header-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+
+    @media (min-width: 640px) {
+      .header-controls {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+      }
+    }
+
+    .detect-mode-buttons {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    @media (min-width: 640px) {
+      .detect-mode-buttons {
+        gap: 8px;
+      }
+    }
+
+    .detect-mode-btn {
+      font-size: 8px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: white;
+      background: #6c757d;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+      min-height: 28px;
+    }
+
+    @media (min-width: 640px) {
+      .detect-mode-btn {
+        font-size: 9px;
+        padding: 6px 12px;
+        gap: 6px;
+        border-radius: 8px;
+      }
+    }
+
+    .detect-mode-btn:hover {
+      background: #5a6268;
+    }
+
+    .detect-mode-btn.active {
+      background: #28a745;
+      color: white;
+    }
+
+    .detect-mode-btn.active:hover {
+      background: #218838;
+    }
+
     /* Drop zone */
     .drop-zone {
       border: 2px dashed #cbd5e1;
@@ -1445,13 +1514,23 @@
             </svg>
             Dữ liệu đầu vào
           </h2>
-          <button id="openCameraBtn" class="open-camera-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-              <circle cx="12" cy="13" r="4"></circle>
-            </svg>
-            Mở Camera
-          </button>
+          <div class="header-controls">
+            <button id="openCameraBtn" class="open-camera-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              Mở Camera
+            </button>
+            <div class="detect-mode-buttons">
+              <button id="fastDetectBtn" class="detect-mode-btn">
+                ⚡ Fast-Detect
+              </button>
+              <button id="deepDetectBtn" class="detect-mode-btn active">
+                🔍 Deep-Detect
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="drop-zone" id="dropZone">
@@ -1572,6 +1651,8 @@
     const fileInput = document.getElementById("fileInput");
     const decodeBtn = document.getElementById("decodeBtn");
     const openCameraBtn = document.getElementById("openCameraBtn");
+    const fastDetectBtn = document.getElementById("fastDetectBtn");
+    const deepDetectBtn = document.getElementById("deepDetectBtn");
     const captureBtn = document.getElementById("captureBtn");
     const stopCameraBtn = document.getElementById("stopCameraBtn");
     const videoEl = document.getElementById("videoEl");
@@ -1601,6 +1682,7 @@
     let copyBtnTimer = null;
     let zoomScale = 1;
     let zoomRotation = 0;
+    let detectMode = "deep";
 
     function updateDecodeButtonState() {
       const hasFile = capturedFile || (fileInput.files && fileInput.files[0]);
@@ -1703,7 +1785,7 @@
       }
       ctx.drawImage(videoEl, 0, 0, width, height);
 
-      const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.95));
+      const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.98));
       if (!blob) {
         setStatus("Cannot capture photo from camera.", "err");
         return;
@@ -1741,7 +1823,7 @@
       setStatus("Uploading and decoding image...");
 
       try {
-        const response = await fetch("/decode/file", {
+        const response = await fetch(`/decode/file?detect_mode=${detectMode}`, {
           method: "POST",
           body: formData,
         });
@@ -1864,6 +1946,16 @@
     });
 
     openCameraBtn.addEventListener("click", startCamera);
+    fastDetectBtn.addEventListener("click", function() {
+      detectMode = "fast";
+      fastDetectBtn.classList.add("active");
+      deepDetectBtn.classList.remove("active");
+    });
+    deepDetectBtn.addEventListener("click", function() {
+      detectMode = "deep";
+      deepDetectBtn.classList.add("active");
+      fastDetectBtn.classList.remove("active");
+    });
     captureBtn.addEventListener("click", capturePhoto);
     stopCameraBtn.addEventListener("click", () => {
       stopCamera();
