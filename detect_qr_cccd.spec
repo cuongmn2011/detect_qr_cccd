@@ -22,6 +22,7 @@ vine_path = get_module_path('vine')
 datas = [
     ('d:/Acacy/detect_qr_cccd/web', 'web/'),
     ('d:/Acacy/detect_qr_cccd/asset', 'asset/'),
+    ('d:/Acacy/detect_qr_cccd/models', 'models/'),  # WeChat QRCode model files (CRITICAL for ML mode)
 ]
 
 # Add packages if found
@@ -53,6 +54,7 @@ a = Analysis(
         'pillow_heif',
         'zxingcpp',
         'pydantic',
+        'model_loader',  # Custom module for loading WeChat models
     ],
     hookspath=[],
     hooksconfig={},
