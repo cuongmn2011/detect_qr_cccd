@@ -694,7 +694,7 @@ def print_cccd_qr_data(raw_data: str) -> None:
     print("-" * 40)
 
 
-def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None, detect_mode: str = "deep") -> dict[str, Any]:
+def detect_cccd_from_image(img: np.ndarray, debug_dir: Path | None = None, detect_mode: str = "fast") -> dict[str, Any]:
     """Detect and decode CCCD QR data from a single image.
 
     Strategy: Try WeChat QRCode (Deep Learning, handles patterns/distortion better)

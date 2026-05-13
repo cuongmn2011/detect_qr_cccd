@@ -18,7 +18,7 @@ _redis = redis_lib.from_url(REDIS_URL)
 
 
 @celery.task(bind=True, name="detect_qr")
-def detect_qr_task(self, image_key: str, detect_mode: str = "deep") -> dict:
+def detect_qr_task(self, image_key: str, detect_mode: str = "fast") -> dict:
     """Celery task: load image from Redis, detect QR, return result.
 
     Args:
